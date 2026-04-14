@@ -1,14 +1,50 @@
 import React, { useState, FormEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/router";
+import { signIn } from "next-auth/react";
+
 import AuthLayout from "../../components/layout/AuthLayout";
 
 const Login: React.FC = () => {
-  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const router = useRouter();
 
-  const handleLogin = (e: FormEvent<HTMLFormElement>) => {
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [email, setEmail] = useState<string>("");
+  const [password, setPassword] = useState<string>("");
+
+  const [error, setError] = useState<string>("");
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  const handleLogin = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    // TODO (Nahdia): Integrasi Firebase signInWithEmailAndPassword
-    console.log("Login logic executed");
+    setError("");
+    setIsLoading(true);
+
+    try {
+      const res = await signIn("credentials", {
+        redirect: false,
+        email: email,
+        password: password,
+        callbackUrl: "/dashboard",
+      });
+
+      if (res?.error) {
+        setError(res.error);
+      } else if (res?.ok) {
+        console.log("Login Berhasil!");
+        router.push("/dashboard");
+      }
+    } catch (err: any) {
+      console.error("Login Error:", err);
+      setError("Terjadi kesalahan sistem. Periksa koneksi Anda.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = () => {
+    setIsLoading(true);
+    signIn("google", { callbackUrl: "/dashboard" });
   };
 
   return (
@@ -22,6 +58,13 @@ const Login: React.FC = () => {
             Kelola ekosistem pertanian Anda dengan presisi teknologi masa depan.
           </p>
         </div>
+
+        {error && (
+          <div className="bg-red-100 text-red-800 p-4 rounded-xl flex items-start gap-3 border border-red-500 animate-pulse">
+            <span className="material-symbols-outlined text-red-600">error</span>
+            <p className="text-sm font-medium">{error}</p>
+          </div>
+        )}
 
         <form onSubmit={handleLogin} className="space-y-6">
           <div className="space-y-5">
@@ -43,6 +86,8 @@ const Login: React.FC = () => {
                   type="email"
                   required
                   placeholder="nama@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   className="w-full bg-surface-container-high border-none rounded-xl py-4 pl-12 pr-4 text-on-surface focus:ring-2 focus:ring-primary transition-all outline-none"
                 />
               </div>
@@ -56,12 +101,12 @@ const Login: React.FC = () => {
                 >
                   Kata Sandi
                 </label>
-                <Link
+                {/* <Link
                   href="#"
                   className="text-xs font-bold text-primary hover:underline"
                 >
                   Lupa Password?
-                </Link>
+                </Link> */}
               </div>
               <div className="relative">
                 <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-outline">
@@ -74,6 +119,8 @@ const Login: React.FC = () => {
                   type={showPassword ? "text" : "password"}
                   required
                   placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   className="w-full bg-surface-container-high border-none rounded-xl py-4 pl-12 pr-12 text-on-surface focus:ring-2 focus:ring-primary transition-all outline-none"
                 />
                 <button
@@ -91,9 +138,23 @@ const Login: React.FC = () => {
 
           <button
             type="submit"
-            className="w-full bg-primary text-on-primary font-bold py-4 rounded-full shadow-lg hover:bg-primary-container transition-all text-lg"
+            disabled={isLoading}
+            className={`w-full text-on-primary font-bold py-4 rounded-full shadow-lg transition-all text-lg flex justify-center items-center gap-2 ${
+              isLoading
+                ? "bg-outline-variant cursor-not-allowed"
+                : "bg-primary hover:bg-primary-container active:scale-95"
+            }`}
           >
-            Masuk Sekarang
+            {isLoading ? (
+              <>
+                <span className="material-symbols-outlined animate-spin text-on-surface">
+                  sync
+                </span>
+                <span>Memproses...</span>
+              </>
+            ) : (
+              "Masuk Sekarang"
+            )}
           </button>
 
           <div className="relative py-2">
@@ -109,7 +170,9 @@ const Login: React.FC = () => {
 
           <button
             type="button"
-            className="w-full flex items-center justify-center gap-3 bg-surface-container-lowest border border-outline-variant/30 text-on-surface font-semibold py-3 rounded-full hover:bg-surface-container-low transition-colors"
+            onClick={handleGoogleLogin}
+            disabled={isLoading}
+            className="w-full flex items-center justify-center gap-3 bg-surface-container-lowest border border-outline-variant/30 text-on-surface font-semibold py-3 rounded-full hover:bg-surface-container-low transition-colors disabled:opacity-50"
           >
             <img
               alt="Google"

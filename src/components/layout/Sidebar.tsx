@@ -1,6 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
+import { useSession, signOut } from "next-auth/react";
 
 interface SidebarProps {
   isOpen: boolean;
@@ -11,12 +12,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const router = useRouter();
   const isActive = (path: string) => router.pathname.startsWith(path);
 
-  const handleLogout = () => {
-    // TODO: fungsi signOut(auth) Firebase di sini
+  const { data: session } = useSession();
+
+  const handleLogout = async () => {
     const confirmLogout = window.confirm("Apakah Anda yakin ingin keluar?");
     if (confirmLogout) {
-      console.log("Proses Logout Firebase...");
-      router.push("/auth/login");
+      console.log("Proses Logout NextAuth...");
+      await signOut({ callbackUrl: "/auth/login" });
     }
   };
 
@@ -98,14 +100,17 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             <img
               className="w-10 h-10 rounded-full object-cover"
               alt="Profile"
-              src="https://i.pinimg.com/474x/52/06/61/520661b91f68268b0f147778b3b87c5e.jpg"
+              src={
+                session?.user?.image ||
+                "https://i.pinimg.com/474x/52/06/61/520661b91f68268b0f147778b3b87c5e.jpg"
+              }
             />
             <div className="overflow-hidden">
-              <p className="text-sm font-bold text-on-surface truncate">
-                Pengguna
+              <p className="text-sm font-bold text-on-surface truncate capitalize">
+                {session?.user?.fullName || "Memuat..."}
               </p>
-              <p className="text-xs text-on-surface-variant truncate">
-                Pemilik Tanaman
+              <p className="text-xs text-on-surface-variant truncate capitalize">
+                {session?.user?.role || "Memuat..."}
               </p>
             </div>
           </div>

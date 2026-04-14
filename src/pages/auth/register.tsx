@@ -1,15 +1,55 @@
 import React, { useState, FormEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/router";
+
 import AuthLayout from "../../components/layout/AuthLayout";
 
 const Register: React.FC = () => {
-  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const router = useRouter();
 
-  const handleRegister = (e: FormEvent<HTMLFormElement>) => {
+  // 1. State Management untuk menangkap inputan
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [name, setName] = useState<string>("");
+  const [email, setEmail] = useState<string>("");
+  const [password, setPassword] = useState<string>("");
+
+  // 2. UX State untuk error dan loading
+  const [error, setError] = useState<string>("");
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  // 3. Logika Menembak API Register
+  const handleRegister = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    // TODO: Integrasi Firebase createUserWithEmailAndPassword
-    // Jangan lupa simpan nama lengkap ke profile atau database Firestore setelah register berhasil
-    console.log("Register logic executed");
+    setError("");
+    setIsLoading(true);
+
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fullName: name,
+          email: email,
+          password: password,
+        }),
+      });
+
+      const response = await res.json();
+
+      if (response.status) {
+        console.log("Registrasi Berhasil:", response.message);
+        router.push("/auth/login");
+      } else {
+        setError(response.message);
+      }
+    } catch (err: any) {
+      console.error("Register Error:", err);
+      setError("Terjadi kesalahan sistem. Silakan coba lagi.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -24,6 +64,13 @@ const Register: React.FC = () => {
             Anda dari mana saja.
           </p>
         </div>
+
+        {error && (
+          <div className="bg-red-100 text-red-800 p-4 rounded-xl flex items-start gap-3 border border-red-500 animate-pulse">
+            <span className="material-symbols-outlined text-red-600">error</span>
+            <p className="text-sm font-medium">{error}</p>
+          </div>
+        )}
 
         <form onSubmit={handleRegister} className="space-y-6">
           <div className="space-y-5">
@@ -45,6 +92,8 @@ const Register: React.FC = () => {
                   type="text"
                   required
                   placeholder="Jiha Ramdhan"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
                   className="w-full bg-surface-container-high border-none rounded-xl py-4 pl-12 pr-4 text-on-surface focus:ring-2 focus:ring-primary transition-all outline-none"
                 />
               </div>
@@ -68,6 +117,8 @@ const Register: React.FC = () => {
                   type="email"
                   required
                   placeholder="nama@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   className="w-full bg-surface-container-high border-none rounded-xl py-4 pl-12 pr-4 text-on-surface focus:ring-2 focus:ring-primary transition-all outline-none"
                 />
               </div>
@@ -91,6 +142,8 @@ const Register: React.FC = () => {
                   type={showPassword ? "text" : "password"}
                   required
                   placeholder="Minimal 8 karakter"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   className="w-full bg-surface-container-high border-none rounded-xl py-4 pl-12 pr-12 text-on-surface focus:ring-2 focus:ring-primary transition-all outline-none"
                 />
                 <button
@@ -108,9 +161,23 @@ const Register: React.FC = () => {
 
           <button
             type="submit"
-            className="w-full bg-primary text-on-primary font-bold py-4 rounded-full shadow-lg hover:bg-primary-container transition-all text-lg"
+            disabled={isLoading}
+            className={`w-full text-on-primary font-bold py-4 rounded-full shadow-lg transition-all text-lg flex justify-center items-center gap-2 ${
+              isLoading
+                ? "bg-outline-variant cursor-not-allowed"
+                : "bg-primary hover:bg-primary-container active:scale-95"
+            }`}
           >
-            Daftar Akun Baru
+            {isLoading ? (
+              <>
+                <span className="material-symbols-outlined animate-spin text-on-surface">
+                  sync
+                </span>
+                <span>Memproses...</span>
+              </>
+            ) : (
+              "Daftar Akun Baru"
+            )}
           </button>
 
           <div className="relative py-2">
@@ -126,6 +193,7 @@ const Register: React.FC = () => {
 
           <button
             type="button"
+            // onClick={() => signIn("google")} // Akan diaktifkan setelah NextAuth setup
             className="w-full flex items-center justify-center gap-3 bg-surface-container-lowest border border-outline-variant/30 text-on-surface font-semibold py-3 rounded-full hover:bg-surface-container-low transition-colors"
           >
             <img
