@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import DashboardLayout from "../components/layout/DashboardLayout";
-import mqtt from "mqtt";
+import { useAgriSmart } from "../hooks/useAgriSmart";
 import {
   LineChart,
   Line,
@@ -13,81 +13,21 @@ import {
 } from "recharts";
 
 const Dashboard: React.FC = () => {
-  // 1. State Management
-  const [espStatus, setEspStatus] = useState("Menghubungkan...");
-  const [dhtStatus, setDhtStatus] = useState("Menunggu Data...");
-  const [sensorData, setSensorData] = useState({ temperature: 0, humidity: 0 });
-  const [chartData, setChartData] = useState<any[]>([]);
-  const [isWatering, setIsWatering] = useState(false);
+  // Panggil semua state dan fungsi dari Custom Hook (termasuk yang baru)
+  const {
+    espStatus,
+    dhtStatus,
+    sensorData,
+    chartData,
+    isWatering,
+    handleWatering,
+    isSensorActive,       // State baru
+    toggleSensorActive,   // Fungsi baru
+  } = useAgriSmart();
 
   // Data Dummy sesuai permintaan
   const DUMMY_SOIL_MOISTURE = 68;
   const DUMMY_WATER_TANK = 82;
-
-  // 2. Efek MQTT Client-Side (WebSockets)
-  useEffect(() => {
-    const client = mqtt.connect("wss://broker.emqx.io:8084/mqtt", {
-      clientId: `nextjs_client_${Math.random().toString(16).slice(3)}`,
-    });
-
-    client.on("connect", () => {
-      setEspStatus("Terhubung");
-      client.subscribe("agrismart/iot/dht");
-    });
-
-    client.on("message", (topic, message) => {
-      if (topic === "agrismart/iot/dht") {
-        try {
-          const data = JSON.parse(message.toString());
-          setSensorData({
-            temperature: data.temperature,
-            humidity: data.humidity, // Kelembapan udara dari DHT
-          });
-          setDhtStatus("Terhubung");
-
-          // Update data grafik
-          const now = new Date();
-          const timeStr = `${now.getHours().toString().padStart(2, "0")}:${now
-            .getMinutes()
-            .toString()
-            .padStart(2, "0")}:${now.getSeconds().toString().padStart(2, "0")}`;
-
-          setChartData((prev) => {
-            const newData = [
-              ...prev,
-              { time: timeStr, suhu: data.temperature, kelembapan: data.humidity },
-            ];
-            // Simpan maksimal 15 titik data terakhir agar grafik tidak menumpuk
-            if (newData.length > 15) newData.shift();
-            return newData;
-          });
-        } catch (error) {
-          console.error("Error parsing MQTT data", error);
-        }
-      }
-    });
-
-    client.on("offline", () => {
-      setEspStatus("Terputus");
-      setDhtStatus("Terputus");
-    });
-
-    return () => {
-      client.end();
-    };
-  }, []);
-
-  // 3. Fungsi Panggil API Penyiraman
-  const handleWatering = async () => {
-    setIsWatering(true);
-    try {
-      await fetch("/api/water", { method: "POST" });
-    } catch (error) {
-      console.error("Gagal mengirim perintah", error);
-    }
-    // Kembalikan status tombol setelah 3 detik (sesuai durasi ESP menyala)
-    setTimeout(() => setIsWatering(false), 3000);
-  };
 
   return (
     <DashboardLayout pageTitle="Dasbor Utama">
@@ -98,21 +38,41 @@ const Dashboard: React.FC = () => {
             Status ESP32: {espStatus}
           </span>
         </div>
-        <button
-          onClick={handleWatering}
-          disabled={isWatering || espStatus !== "Terhubung"}
-          className={`px-6 py-2 rounded-lg font-bold text-white transition-all ${
-            isWatering
-              ? "bg-blue-400 cursor-not-allowed"
-              : "bg-blue-600 hover:bg-blue-700 shadow-md"
-          }`}
-        >
-          {isWatering ? "Menyiram..." : "Siram Manual"}
-        </button>
+        
+        {/* TAMBAHAN: Container baru untuk membungkus 2 tombol */}
+        <div className="flex gap-3">
+          {/* Tombol Toggle Sensor */}
+
+          {/* <button
+            onClick={toggleSensorActive}
+            disabled={espStatus !== "Terhubung"}
+            className={`px-4 py-2 rounded-lg font-bold transition-all shadow-sm ${
+              isSensorActive
+                ? "bg-surface-container-low text-on-surface hover:bg-surface-container border border-emerald-100"
+                : "bg-red-50 text-red-600 hover:bg-red-100 border border-red-200"
+            } ${espStatus !== "Terhubung" ? "opacity-50 cursor-not-allowed" : ""}`}
+          >
+            {isSensorActive ? "⏸ Jeda Data Sensor" : "▶️ Lanjutkan Data Sensor"}
+          </button> */}
+
+          {/* Tombol Siram Manual */}
+          <button
+            onClick={handleWatering}
+            disabled={isWatering || espStatus !== "Terhubung"}
+            className={`px-6 py-2 rounded-lg font-bold text-white transition-all ${
+              isWatering
+                ? "bg-blue-400 cursor-not-allowed"
+                : "bg-blue-600 hover:bg-blue-700 shadow-md"
+            }`}
+          >
+            {isWatering ? "Menyiram..." : "Siram Manual"}
+          </button>
+        </div>
       </div>
 
-      {/* 1. Baris Metrik Sensor (3 Kartu) */}
+      {/* Baris Metrik Sensor */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        
         {/* Kartu Kelembapan Tanah (DUMMY) */}
         <div className="bg-surface-container-lowest p-6 rounded-xl relative overflow-hidden flex flex-col justify-between h-48 border border-emerald-50 shadow-sm">
           <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-[40%] bg-primary rounded-r-md"></div>
@@ -130,9 +90,6 @@ const Dashboard: React.FC = () => {
               {DUMMY_SOIL_MOISTURE}<span className="text-2xl text-on-surface-variant">%</span>
             </h3>
             <p className="text-sm font-body text-primary mt-2 flex items-center gap-1 font-medium">
-              <span className="material-symbols-outlined text-xs">
-                trending_up
-              </span>{" "}
               Data Dummy
             </p>
           </div>
@@ -144,7 +101,7 @@ const Dashboard: React.FC = () => {
           <div className="flex justify-between items-start">
             <span className="text-sm font-semibold text-on-surface-variant flex flex-col">
               Suhu Lingkungan
-              <span className={`text-[10px] mt-1 font-normal ${dhtStatus === 'Terhubung' ? 'text-emerald-500' : 'text-orange-400'}`}>
+              <span className={`text-[10px] mt-1 font-normal ${dhtStatus === 'Terhubung' ? 'text-emerald-500' : 'text-red-400'}`}>
                 *{dhtStatus}
               </span>
             </span>
@@ -188,7 +145,7 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Area Grafik Tren */}
+      {/* Area Grafik Tren */}
       <div className="bg-surface-container-lowest rounded-xl p-8 border border-emerald-50 shadow-sm">
         <div className="flex items-center justify-between mb-8">
           <div>
@@ -201,7 +158,6 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Grafik Recharts menggantikan SVG Placeholder */}
         <div className="w-full h-80 relative">
           {chartData.length === 0 ? (
             <div className="absolute inset-0 flex items-center justify-center bg-surface-container-low rounded-xl">
