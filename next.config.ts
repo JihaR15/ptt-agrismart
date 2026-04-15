@@ -4,7 +4,16 @@ const nextConfig: NextConfig = {
   /* config options here */
   reactStrictMode: true,
   images: {
-    domains: ['lh3.googleusercontent.com', 'i.pinimg.com'], // Daftarkan domain Google dan Pinterest (fallback)
+     remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'lh3.googleusercontent.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'i.pinimg.com',
+      },
+    ],
   },
 };
 
