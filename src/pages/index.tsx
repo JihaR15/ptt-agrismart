@@ -71,6 +71,7 @@ const LandingPage: React.FC = () => {
                     Mulai Bertani Cerdas
                   </Link>
                   <button 
+                  onClick={() => alert("Menampilkan pop-up video demo AgriSmart (coming soon...)")} 
                   className="flex items-center justify-center gap-2 px-8 py-4 rounded-full font-bold text-lg text-primary hover:bg-primary/5 transition-colors">
                     <span className="material-symbols-outlined">
                       play_circle
