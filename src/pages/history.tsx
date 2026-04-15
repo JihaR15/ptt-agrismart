@@ -16,6 +16,8 @@ import {
   QueryConstraint, // <-- Tambahan tipe data
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 type ActionStatus =
   | "Stabil"
@@ -42,6 +44,8 @@ const History: React.FC = () => {
   const [uiTimeRange, setUiTimeRange] = useState("Semua Waktu");
   const [uiDeviceSensor, setUiDeviceSensor] = useState("Semua Perangkat");
   const [uiActionStatus, setUiActionStatus] = useState("Semua Status");
+
+  const [isExporting, setIsExporting] = useState(false);
 
   // === STATE UNTUK FILTER YANG AKTIF (Diterapkan setelah tombol ditekan) ===
   const [activeFilters, setActiveFilters] = useState({
@@ -262,8 +266,93 @@ const History: React.FC = () => {
     }
   };
 
-  const handleExportPDF = () => {
-    alert("Fitur Ekspor PDF sedang dalam pengembangan!");
+  const handleExportPDF = async () => {
+    setIsExporting(true);
+    try {
+      // 1. Ambil batasan filter yang sedang aktif
+      const constraints = getQueryConstraints();
+
+      // 2. Fetch SEMUA data yang cocok dengan filter (tanpa limit pagination)
+      const historyRef = collection(db, "history_log");
+      const q = query(historyRef, ...constraints);
+      const snapshot = await getDocs(q);
+
+      if (snapshot.empty) {
+        alert("Tidak ada data untuk diekspor.");
+        setIsExporting(false);
+        return;
+      }
+
+      // 3. Format data untuk AutoTable
+      const tableData: any[][] = [];
+      snapshot.forEach((doc) => {
+        const item = doc.data();
+        const dateObj = item.timestamp?.toDate() || new Date();
+        const dateStr = dateObj.toLocaleDateString("id-ID", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        });
+        const timeStr = dateObj.toLocaleTimeString("id-ID", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        });
+
+        tableData.push([
+          dateStr,
+          timeStr,
+          `${item.moisture || 0}%`,
+          `${item.temperature || 0} °C`,
+          item.action || "Stabil",
+        ]);
+      });
+
+      // 4. Inisialisasi Dokumen PDF (Kertas A4)
+      const doc = new jsPDF("portrait", "mm", "a4");
+
+      // 5. Tambahkan Header/Kop Laporan
+      doc.setFontSize(18);
+      doc.setTextColor(6, 78, 59); // Warna text-emerald-900
+      doc.text("Laporan Historis Sensor AgriSmart", 14, 22);
+
+      doc.setFontSize(10);
+      doc.setTextColor(100, 116, 139); // Warna abu-abu
+      doc.text(
+        `Filter Waktu: ${activeFilters.timeRange} | Status: ${activeFilters.actionStatus}`,
+        14,
+        30,
+      );
+      doc.text(`Dicetak pada: ${new Date().toLocaleString("id-ID")}`, 14, 35);
+
+      // 6. Buat Tabel
+      autoTable(doc, {
+        startY: 42,
+        head: [["Tanggal", "Waktu", "Kelembapan", "Suhu", "Status Aksi"]],
+        body: tableData,
+        theme: "grid",
+        headStyles: {
+          fillColor: [16, 185, 129], // Warna bg-emerald-500
+          textColor: 255,
+          fontStyle: "bold",
+        },
+        alternateRowStyles: {
+          fillColor: [236, 253, 245], // Warna bg-emerald-50
+        },
+        styles: {
+          fontSize: 9,
+          cellPadding: 4,
+        },
+      });
+
+      // 7. Unduh File
+      doc.save(`Laporan_AgriSmart_${new Date().getTime()}.pdf`);
+    } catch (error) {
+      console.error("Gagal mengekspor PDF:", error);
+      alert("Terjadi kesalahan saat memproses PDF.");
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (
@@ -297,12 +386,17 @@ const History: React.FC = () => {
             </button>
             <button
               onClick={handleExportPDF}
-              className="flex items-center justify-center gap-2 bg-gradient-to-r from-primary to-primary-container text-white px-6 py-3 rounded-full font-semibold shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all flex-1 md:flex-none"
+              disabled={isExporting || loading || historyData.length === 0}
+              className="flex items-center justify-center gap-2 bg-gradient-to-r from-primary to-primary-container text-white px-6 py-3 rounded-full font-semibold shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all flex-1 md:flex-none disabled:opacity-50 disabled:hover:scale-100"
             >
-              <span className="material-symbols-outlined text-lg">
-                picture_as_pdf
+              <span
+                className={`material-symbols-outlined text-lg ${isExporting ? "animate-spin" : ""}`}
+              >
+                {isExporting ? "sync" : "picture_as_pdf"}
               </span>
-              <span className="hidden sm:inline">Ekspor ke PDF</span>
+              <span className="hidden sm:inline">
+                {isExporting ? "Memproses..." : "Ekspor ke PDF"}
+              </span>
             </button>
           </div>
         </div>
