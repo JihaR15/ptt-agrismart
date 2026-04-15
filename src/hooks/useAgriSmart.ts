@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { ref, onValue, set } from "firebase/database";
-// Import realtimeDb dari file firebase.ts kamu
 import { realtimeDb } from "../lib/firebase"; 
 
 export const useAgriSmart = () => {
@@ -9,17 +8,15 @@ export const useAgriSmart = () => {
   const [sensorData, setSensorData] = useState({ temperature: 0, humidity: 0 });
   const [chartData, setChartData] = useState<any[]>([]);
   const [isWatering, setIsWatering] = useState(false);
-  
-  // TAMBAHAN: State untuk melacak apakah sensor aktif atau dimatikan
   const [isSensorActive, setIsSensorActive] = useState(true);
 
+  // TAMBAHAN: State khusus untuk melacak waktu ping terakhir
+  const [lastPing, setLastPing] = useState<number>(0);
+
   useEffect(() => {
-    // Gunakan realtimeDb di sini
     const dhtRef = ref(realtimeDb, "agrismart/dht");
     const statusRef = ref(realtimeDb, "agrismart/status/last_ping");
     const controlRef = ref(realtimeDb, "agrismart/control/isWatering");
-    
-    // TAMBAHAN: Referensi ke node isSensorActive
     const sensorControlRef = ref(realtimeDb, "agrismart/control/isSensorActive");
 
     // Listen Data DHT
@@ -30,7 +27,6 @@ export const useAgriSmart = () => {
           temperature: data.temperature || 0,
           humidity: data.humidity || 0,
         });
-        setDhtStatus("Terhubung");
 
         // Update Chart
         const now = new Date();
@@ -44,49 +40,31 @@ export const useAgriSmart = () => {
             ...prev,
             { time: timeStr, suhu: data.temperature, kelembapan: data.humidity },
           ];
-          if (newData.length > 15) newData.shift(); // Batasi 15 titik data
+          if (newData.length > 15) newData.shift(); 
           return newData;
         });
-      } else {
-        setDhtStatus("Terputus");
       }
     });
 
-    // Listen Status ESP (Heartbeat)
+    // Listen Status ESP (Hanya menyimpan waktu terakhir ke state)
     const unsubscribeStatus = onValue(statusRef, (snapshot) => {
       if (snapshot.exists()) {
-        const lastPing = snapshot.val(); 
-        const now = Date.now();
-        
-        // KARENA INTERVAL 1 MENIT:
-        // Kita beri toleransi 90 detik (90000 ms) sebelum dianggap offline
-        if (now - lastPing > 90000) { 
-          setEspStatus("Terputus");
-          setDhtStatus("Terputus");
-        } else {
-          setEspStatus("Terhubung");
-        }
+        setLastPing(snapshot.val()); // Simpan timestamp ke state
       }
     });
 
-    // Cek status secara berkala setiap 10 detik (tidak perlu terlalu sering)
-    const heartbeatCheck = setInterval(() => {
-      setEspStatus((prev) => prev); 
-    }, 10000);
-
-    // Listen status penyiraman dari RTDB
+    // Listen status penyiraman
     const unsubscribeControl = onValue(controlRef, (snapshot) => {
       if (snapshot.exists()) {
         setIsWatering(snapshot.val());
       }
     });
 
-    // TAMBAHAN: Listen status sensor aktif/tidak dari RTDB
+    // Listen status sensor aktif
     const unsubscribeSensorControl = onValue(sensorControlRef, (snapshot) => {
       if (snapshot.exists()) {
         setIsSensorActive(snapshot.val());
       } else {
-        // Jika node belum ada di Firebase, set default ke true
         set(sensorControlRef, true);
       }
     });
@@ -95,21 +73,41 @@ export const useAgriSmart = () => {
       unsubscribeDht();
       unsubscribeStatus();
       unsubscribeControl();
-      unsubscribeSensorControl(); // Jangan lupa cleanup
-      clearInterval(heartbeatCheck);
+      unsubscribeSensorControl();
     };
   }, []);
 
-  // Fungsi Panggil Penyiraman (Slightly improved)
+  // EFEK BARU: Mengecek koneksi secara berkala setiap 5 detik
+  useEffect(() => {
+    const checkConnection = () => {
+      if (lastPing === 0) return; // Abaikan jika data dari Firebase belum termuat
+      
+      const now = Date.now();
+      // Toleransi 90 detik (90000 ms)
+      if (now - lastPing > 90000) { 
+        setEspStatus("Terputus");
+        setDhtStatus("Terputus");
+      } else {
+        setEspStatus("Terhubung");
+        setDhtStatus("Terhubung");
+      }
+    };
+
+    // Langsung cek saat nilai lastPing berubah
+    checkConnection(); 
+    
+    // Buat interval yang berjalan mandiri
+    const heartbeatCheck = setInterval(checkConnection, 5000); 
+
+    return () => clearInterval(heartbeatCheck);
+  }, [lastPing]); // Interval akan di-reset jika lastPing diperbarui
+
+  // Fungsi Panggil Penyiraman
   const handleWatering = async () => {
     const controlRef = ref(realtimeDb, "agrismart/control/isWatering");
-    
     try {
-      // Set ke true
       await set(controlRef, true);
       setIsWatering(true);
-
-      // Kembalikan ke false setelah 5 detik agar ESP32 sempat merespons
       setTimeout(async () => {
         await set(controlRef, false);
         setIsWatering(false);
@@ -119,11 +117,10 @@ export const useAgriSmart = () => {
     }
   };
 
-  // TAMBAHAN: Fungsi untuk menghidupkan/mematikan pengiriman data sensor
+  // Fungsi Toggle Sensor
   const toggleSensorActive = async () => {
     const sensorControlRef = ref(realtimeDb, "agrismart/control/isSensorActive");
     try {
-      // Ubah nilai kebalikannya (jika true jadi false, jika false jadi true)
       await set(sensorControlRef, !isSensorActive);
     } catch (error) {
       console.error("Gagal toggle sensor:", error);
@@ -137,7 +134,7 @@ export const useAgriSmart = () => {
     chartData,
     isWatering,
     handleWatering,
-    isSensorActive,       // Export state baru
-    toggleSensorActive,   // Export fungsi baru
+    isSensorActive,       
+    toggleSensorActive,   
   };
 };
