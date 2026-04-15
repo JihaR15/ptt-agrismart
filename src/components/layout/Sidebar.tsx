@@ -2,6 +2,7 @@ import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useSession, signOut } from "next-auth/react";
+import Image from "next/image";
 
 interface SidebarProps {
   isOpen: boolean;
@@ -96,24 +97,26 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         </nav>
 
         <div className="px-4 mt-auto pt-4 border-t border-emerald-100/20 lg:border-none">
-          <div className="p-4 bg-surface-container-lowest rounded-2xl mb-4 flex items-center gap-3 border border-emerald-50 shadow-sm">
-            <img
+            <div className="p-4 bg-surface-container-lowest rounded-2xl mb-4 flex items-center gap-3 border border-emerald-50 shadow-sm">
+            <Image
               className="w-10 h-10 rounded-full object-cover"
               alt="Profile"
               src={
-                session?.user?.image ||
-                "https://i.pinimg.com/474x/52/06/61/520661b91f68268b0f147778b3b87c5e.jpg"
+              session?.user?.image ||
+              "https://i.pinimg.com/474x/52/06/61/520661b91f68268b0f147778b3b87c5e.jpg"
               }
+              width={40}
+              height={40}
             />
             <div className="overflow-hidden">
               <p className="text-sm font-bold text-on-surface truncate capitalize">
-                {session?.user?.fullName || "Memuat..."}
+              {session?.user?.fullName || "Memuat..."}
               </p>
               <p className="text-xs text-on-surface-variant truncate capitalize">
-                {session?.user?.role || "Memuat..."}
+              {session?.user?.role || "Memuat..."}
               </p>
             </div>
-          </div>
+            </div>
 
           <button
             onClick={handleLogout}

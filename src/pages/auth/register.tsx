@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 
 import AuthLayout from "../../components/layout/AuthLayout";
+import { signIn } from "next-auth/react";
 
 const Register: React.FC = () => {
   const router = useRouter();
@@ -50,6 +51,11 @@ const Register: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleGoogleLogin = () => {
+      setIsLoading(true);
+      signIn("google", { callbackUrl: "/dashboard" });
   };
 
   return (
@@ -193,7 +199,8 @@ const Register: React.FC = () => {
 
           <button
             type="button"
-            // onClick={() => signIn("google")} // Akan diaktifkan setelah NextAuth setup
+            onClick={handleGoogleLogin}
+            disabled={isLoading}
             className="w-full flex items-center justify-center gap-3 bg-surface-container-lowest border border-outline-variant/30 text-on-surface font-semibold py-3 rounded-full hover:bg-surface-container-low transition-colors"
           >
             <img
