@@ -356,7 +356,7 @@ const History: React.FC = () => {
   };
 
   return (
-    <DashboardLayout pageTitle="Riwayat Data Historis">
+    <>
       <div className="max-w-7xl mx-auto">
         {/* Header Section */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-10 gap-6">
@@ -624,7 +624,7 @@ const History: React.FC = () => {
           </div>
         </div>
       </div>
-    </DashboardLayout>
+    </>
   );
 };
 

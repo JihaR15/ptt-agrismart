@@ -29,7 +29,7 @@ const Dashboard: React.FC = () => {
   } = useAgriSmart();
 
   return (
-    <DashboardLayout pageTitle="Dasbor Utama">
+    <>
       <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
         <div className="flex items-center gap-4">
           <div className="relative">
@@ -288,7 +288,7 @@ const Dashboard: React.FC = () => {
           )}
         </div>
       </div>
-    </DashboardLayout>
+    </>
   );
 };
 
