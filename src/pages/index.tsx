@@ -1,8 +1,52 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import Head from "next/head";
 
+// IMPORT KONFIGURASI FIREBASE ANDA DI SINI
+import { db } from "../lib/firebase"; // Sesuaikan path ini dengan lokasi file konfigurasi Anda
+import { collection, getDocs } from "firebase/firestore";
+
 const LandingPage: React.FC = () => {
+  const [activeMenu, setActiveMenu] = useState<"fitur" | "cara-kerja">("fitur");
+
+  // 1. BUAT STATE UNTUK MENYIMPAN DATA FIREBASE
+  const [landingStats, setLandingStats] = useState({
+    pengguna: 0,
+    tanaman: 0,
+    isLoading: true
+  });
+
+  // 2. FETCH DATA DARI FIRESTORE SAAT KOMPONEN DIMUAT
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        // Mengambil semua dokumen di koleksi 'landing'
+        const querySnapshot = await getDocs(collection(db, "landing"));
+        
+        // Memastikan koleksi tidak kosong
+        if (!querySnapshot.empty) {
+          // Mengambil dokumen pertama (karena di gambar Anda hanya butuh 1 dokumen stats)
+          const data = querySnapshot.docs[0].data();
+          
+          setLandingStats({
+            pengguna: data.Pengguna || 0, // Perhatikan huruf kapital sesuai gambar Firestore Anda
+            tanaman: data.Tanaman || 0,
+            isLoading: false
+          });
+        }
+      } catch (error) {
+        console.error("Gagal mengambil data dari Firestore:", error);
+        setLandingStats((prev) => ({ ...prev, isLoading: false }));
+      }
+    };
+
+    fetchStats();
+  }, []);
+
+
+
+  
+
   return (
     <>
       <Head>
@@ -18,14 +62,24 @@ const LandingPage: React.FC = () => {
 
             <div className="hidden md:flex items-center gap-8">
               <a
-                className="text-emerald-700 font-bold border-b-2 border-emerald-600 font-headline text-lg tracking-tight hover:text-emerald-600 transition-all duration-300"
+                className={`${
+                  activeMenu === "fitur"
+                    ? "text-emerald-700 font-bold border-b-2 border-emerald-600"
+                    : "text-emerald-900/60 font-medium border-b-2 border-transparent"
+                } font-headline text-lg tracking-tight hover:text-emerald-600 transition-all duration-300`}
                 href="#fitur"
+                onClick={() => setActiveMenu("fitur")}
               >
                 Fitur
               </a>
               <a
-                className="text-emerald-900/60 font-medium font-headline text-lg tracking-tight hover:text-emerald-600 transition-all duration-300"
+                className={`${
+                  activeMenu === "cara-kerja"
+                    ? "text-emerald-700 font-bold border-b-2 border-emerald-600"
+                    : "text-emerald-900/60 font-medium border-b-2 border-transparent"
+                } font-headline text-lg tracking-tight hover:text-emerald-600 transition-all duration-300`}
                 href="#cara-kerja"
+                onClick={() => setActiveMenu("cara-kerja")}
               >
                 Cara Kerja
               </a>
@@ -119,22 +173,28 @@ const LandingPage: React.FC = () => {
             <div className="max-w-7xl mx-auto px-8 flex flex-col md:flex-row justify-around items-center gap-8 md:gap-4">
               <div className="text-center">
                 <p className="text-3xl md:text-4xl font-headline font-extrabold text-primary">
-                  10,000+
+                  {/* Gunakan data Pengguna dari Firestore */}
+                  {landingStats.isLoading ? "..." : `${landingStats.pengguna}+`}
                 </p>
                 <p className="text-xs md:text-sm font-semibold text-on-surface-variant uppercase tracking-wider mt-1">
                   Pecinta Tanaman
                 </p>
               </div>
+              
               <div className="w-24 h-px md:w-px md:h-12 bg-outline-variant/30"></div>
+              
               <div className="text-center">
                 <p className="text-3xl md:text-4xl font-headline font-extrabold text-primary">
-                  50k+
+                  {/* Gunakan data Tanaman dari Firestore */}
+                  {landingStats.isLoading ? "..." : `${landingStats.tanaman}+`}
                 </p>
                 <p className="text-xs md:text-sm font-semibold text-on-surface-variant uppercase tracking-wider mt-1">
                   Tanaman Terpantau
                 </p>
               </div>
+              
               <div className="w-24 h-px md:w-px md:h-12 bg-outline-variant/30"></div>
+              
               <div className="text-center">
                 <p className="text-3xl md:text-4xl font-headline font-extrabold text-primary">
                   99.9%
