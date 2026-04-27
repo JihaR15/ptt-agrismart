@@ -41,6 +41,7 @@ export const authOptions: NextAuthOptions = {
                     email: user.email,
                     fullName: user.fullName,
                     role: user.role,
+                    allowedDevices: user.allowedDevices || [],
                 };
             },
         }),
@@ -51,11 +52,12 @@ export const authOptions: NextAuthOptions = {
     ],
 
     callbacks: {
-        async jwt({ token, account, user }: any) {
+        async jwt({ token, account, user, trigger, session }: any) {
             if (account?.provider === "credentials" && user) {
                 token.email = user.email;
                 token.fullName = user.fullName;
                 token.role = user.role;
+                token.allowedDevices = user.allowedDevices || [];
             }
             if (account?.provider === "google") {
                 const data = {
@@ -64,13 +66,22 @@ export const authOptions: NextAuthOptions = {
                     image: user.image,
                     type: account.provider,
                 };
-                await signInOAuth(data, (result: any) => {
-                    if (result.status) {
-                        token.fullName = result.data.fullName;
-                        token.role = result.data.role;
-                    }
+                await new Promise((resolve) => {
+                    signInOAuth(data, (result: any) => {
+                        if (result.status) {
+                            token.fullName = result.data.fullName;
+                            token.role = result.data.role;
+                            token.allowedDevices = result.data.allowedDevices || [];
+                        }
+                        resolve(true);
+                    });
                 });
             }
+
+            if (trigger === "update" && session?.user?.allowedDevices) {
+                token.allowedDevices = session.user.allowedDevices;
+            }
+
             return token;
         },
         async session({ session, token }: any) {
@@ -78,6 +89,7 @@ export const authOptions: NextAuthOptions = {
                 session.user.email = token.email;
                 session.user.fullName = token.fullName;
                 session.user.role = token.role;
+                session.user.allowedDevices = token.allowedDevices || [];
             }
             return session;
         },

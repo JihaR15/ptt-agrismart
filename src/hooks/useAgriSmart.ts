@@ -1,131 +1,171 @@
-import { useState, useEffect } from "react";
-import { ref, onValue, set } from "firebase/database";
-import { realtimeDb } from "../lib/firebase"; 
+import { useState, useEffect, useCallback } from "react";
+import mqtt from "mqtt";
 
-export const useAgriSmart = () => {
-  const [espStatus, setEspStatus] = useState("Menghubungkan...");
-  const [dhtStatus, setDhtStatus] = useState("Menunggu Data...");
-  const [sensorData, setSensorData] = useState({ temperature: 0, humidity: 0 });
-  const [chartData, setChartData] = useState<any[]>([]);
-  const [isWatering, setIsWatering] = useState(false);
-  const [isSensorActive, setIsSensorActive] = useState(true);
+interface SensorData {
+  temperature: number;
+  humidity: number;
+  soilMoisture: number;
+  waterLevel: number;
+}
 
-  // TAMBAHAN: State khusus untuk melacak waktu ping terakhir
-  const [lastPing, setLastPing] = useState<number>(0);
+interface ChartDataPoint {
+  time: string;
+  suhu: number;
+  kelembapan: number;
+}
+
+export const useAgriSmart = (deviceId: string) => {
+  const [espStatus, setEspStatus] = useState<"Terhubung" | "Terputus">(
+    "Terputus",
+  );
+  const [dhtStatus, setDhtStatus] = useState<"Terhubung" | "Terputus">(
+    "Terputus",
+  );
+  const [isWatering, setIsWatering] = useState<boolean>(false);
+  const [isSensorActive, setIsSensorActive] = useState<boolean>(true);
+
+  const [lastMessageTime, setLastMessageTime] = useState<number>(0);
+
+  const [sensorData, setSensorData] = useState<SensorData>({
+    temperature: 0,
+    humidity: 0,
+    soilMoisture: 0,
+    waterLevel: 0,
+  });
+
+  const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
+  const [client, setClient] = useState<mqtt.MqttClient | null>(null);
 
   useEffect(() => {
-    const dhtRef = ref(realtimeDb, "agrismart/dht");
-    const statusRef = ref(realtimeDb, "agrismart/status/last_ping");
-    const controlRef = ref(realtimeDb, "agrismart/control/isWatering");
-    const sensorControlRef = ref(realtimeDb, "agrismart/control/isSensorActive");
-
-    // Listen Data DHT
-    const unsubscribeDht = onValue(dhtRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.val();
-        setSensorData({
-          temperature: data.temperature || 0,
-          humidity: data.humidity || 0,
-        });
-
-        // Update Chart
-        const now = new Date();
-        const timeStr = `${now.getHours().toString().padStart(2, "0")}:${now
-          .getMinutes()
-          .toString()
-          .padStart(2, "0")}:${now.getSeconds().toString().padStart(2, "0")}`;
-
-        setChartData((prev) => {
-          const newData = [
-            ...prev,
-            { time: timeStr, suhu: data.temperature, kelembapan: data.humidity },
-          ];
-          if (newData.length > 15) newData.shift(); 
-          return newData;
-        });
-      }
-    });
-
-    // Listen Status ESP (Hanya menyimpan waktu terakhir ke state)
-    const unsubscribeStatus = onValue(statusRef, (snapshot) => {
-      if (snapshot.exists()) {
-        setLastPing(snapshot.val()); // Simpan timestamp ke state
-      }
-    });
-
-    // Listen status penyiraman
-    const unsubscribeControl = onValue(controlRef, (snapshot) => {
-      if (snapshot.exists()) {
-        setIsWatering(snapshot.val());
-      }
-    });
-
-    // Listen status sensor aktif
-    const unsubscribeSensorControl = onValue(sensorControlRef, (snapshot) => {
-      if (snapshot.exists()) {
-        setIsSensorActive(snapshot.val());
+    if (typeof window !== 'undefined' && deviceId) {
+      const savedCache = localStorage.getItem(`agrismart_chart_${deviceId}`);
+      if (savedCache) {
+        setChartData(JSON.parse(savedCache));
       } else {
-        set(sensorControlRef, true);
+        setChartData([]);
       }
+    }
+  }, [deviceId]);
+
+  useEffect(() => {
+    if (!deviceId) return;
+
+    const mqttClient = mqtt.connect("ws://43.218.43.233:9001");
+    setClient(mqttClient);
+
+    mqttClient.on("connect", () => {
+      console.log("✅ Berhasil terhubung ke MQTT Broker");
+      // setEspStatus("Terhubung");
+
+      mqttClient.subscribe(`agrismart/${deviceId}/sensor`);
+      mqttClient.subscribe(`agrismart/${deviceId}/status`);
+    });
+
+    mqttClient.on("message", (topic, message) => {
+      console.log("DATA MASUK:", topic, message.toString());
+      setLastMessageTime(Date.now());
+
+      try {
+        const payload = JSON.parse(message.toString());
+
+        if (topic === `agrismart/${deviceId}/sensor`) {
+          setDhtStatus("Terhubung");
+
+          setSensorData({
+            temperature: payload.temperature || 0,
+            humidity: payload.humidity || 0,
+            soilMoisture: payload.moisture || 0,
+            waterLevel: payload.waterLevel || 0,
+          });
+
+          setChartData((prev) => {
+            const timeString = new Date().toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+            const newDataPoint = {
+              time: timeString,
+              suhu: payload.temperature || 0,
+              kelembapan: payload.humidity || 0,
+            };
+
+            const updatedChart = [...prev, newDataPoint];
+            localStorage.setItem(`agrismart_chart_${deviceId}`, JSON.stringify(updatedChart));
+            return updatedChart.length > 15
+              ? updatedChart.slice(updatedChart.length - 15)
+              : updatedChart;
+          });
+        }
+
+        if (topic === `agrismart/${deviceId}/status`) {
+          if (payload.action === "WATERING_DONE") {
+            setIsWatering(false);
+          }
+        }
+      } catch (error) {
+        console.error("Gagal mem-parsing payload MQTT:", error);
+      }
+    });
+
+    mqttClient.on("offline", () => {
+      setEspStatus("Terputus");
+      setDhtStatus("Terputus");
     });
 
     return () => {
-      unsubscribeDht();
-      unsubscribeStatus();
-      unsubscribeControl();
-      unsubscribeSensorControl();
+      mqttClient.end();
     };
-  }, []);
+  }, [deviceId]);
 
-  // EFEK BARU: Mengecek koneksi secara berkala setiap 5 detik
   useEffect(() => {
-    const checkConnection = () => {
-      if (lastPing === 0) return; // Abaikan jika data dari Firebase belum termuat
-      
-      const now = Date.now();
-      // Toleransi 90 detik (90000 ms)
-      if (now - lastPing > 90000) { 
+    const interval = setInterval(() => {
+      if (!lastMessageTime) return;
+
+      const diff = Date.now() - lastMessageTime;
+
+      if (diff > 10000) {
         setEspStatus("Terputus");
         setDhtStatus("Terputus");
       } else {
         setEspStatus("Terhubung");
-        setDhtStatus("Terhubung");
       }
-    };
+    }, 3000);
 
-    // Langsung cek saat nilai lastPing berubah
-    checkConnection(); 
-    
-    // Buat interval yang berjalan mandiri
-    const heartbeatCheck = setInterval(checkConnection, 5000); 
+    return () => clearInterval(interval);
+  }, [lastMessageTime]);
 
-    return () => clearInterval(heartbeatCheck);
-  }, [lastPing]); // Interval akan di-reset jika lastPing diperbarui
+  const handleWatering = useCallback(() => {
+    if (!client || espStatus !== "Terhubung") return;
 
-  // Fungsi Panggil Penyiraman
-  const handleWatering = async () => {
-    const controlRef = ref(realtimeDb, "agrismart/control/isWatering");
-    try {
-      await set(controlRef, true);
-      setIsWatering(true);
-      setTimeout(async () => {
-        await set(controlRef, false);
-        setIsWatering(false);
-      }, 5000); 
-    } catch (error) {
-      console.error("Gagal update RTDB:", error);
-    }
-  };
+    setIsWatering(true);
+    client.publish(
+      `agrismart/${deviceId}/action`,
+      JSON.stringify({ command: "WATER" }),
+    );
 
-  // Fungsi Toggle Sensor
-  const toggleSensorActive = async () => {
-    const sensorControlRef = ref(realtimeDb, "agrismart/control/isSensorActive");
-    try {
-      await set(sensorControlRef, !isSensorActive);
-    } catch (error) {
-      console.error("Gagal toggle sensor:", error);
-    }
-  };
+    setTimeout(() => setIsWatering(false), 5000);
+  }, [client, espStatus, deviceId]);
+
+  const toggleSensorActive = useCallback(() => {
+    if (!client || espStatus !== "Terhubung") return;
+
+    const newState = !isSensorActive;
+    setIsSensorActive(newState);
+    client.publish(
+      `agrismart/${deviceId}/action`,
+      JSON.stringify({ command: newState ? "RESUME" : "PAUSE" }),
+    );
+  }, [client, espStatus, isSensorActive, deviceId]);
+
+  const updateThreshold = useCallback((newThreshold: number) => {
+    if (!client || espStatus !== "Terhubung") return;
+
+    client.publish(
+      `agrismart/${deviceId}/action`,
+      JSON.stringify({ command: "SET_THRESHOLD", value: newThreshold })
+    );
+    console.log(`🎛️ Threshold dikirim ke ESP32: ${newThreshold}%`);
+  }, [client, espStatus, deviceId]);
 
   return {
     espStatus,
@@ -134,7 +174,8 @@ export const useAgriSmart = () => {
     chartData,
     isWatering,
     handleWatering,
-    isSensorActive,       
-    toggleSensorActive,   
+    isSensorActive,
+    toggleSensorActive,
+    updateThreshold,
   };
 };
