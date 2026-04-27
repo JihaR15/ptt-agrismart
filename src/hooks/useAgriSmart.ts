@@ -50,7 +50,7 @@ export const useAgriSmart = (deviceId: string) => {
   useEffect(() => {
     if (!deviceId) return;
 
-    const mqttClient = mqtt.connect("ws://43.218.43.233:9001");
+    const mqttClient = mqtt.connect("wss://agrismart-mqtt.duckdns.org");
     setClient(mqttClient);
 
     mqttClient.on("connect", () => {
