@@ -1,5 +1,6 @@
 import React from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { AuthLayoutProps } from "../../types/auth";
 import Head from "next/head";
 
@@ -21,6 +22,9 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
       >
         <section className="w-full lg:w-1/2 h-full flex flex-col justify-between p-8 md:p-12 lg:p-16 bg-surface z-10 overflow-y-auto custom-scrollbar">
           <header className="flex items-center gap-3 shrink-0">
+            <Link href="/" className="hover:text-primary transition-colors">
+              <span className="material-symbols-outlined">arrow_back_ios</span>
+            </Link>
             <div className="w-10 h-10 rounded-xl bg-primary-container flex items-center justify-center text-on-primary-container">
               <span
                 className="material-symbols-outlined"
@@ -51,13 +55,14 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
 
         <section className="hidden lg:block lg:w-1/2 h-full relative overflow-hidden">
           <div className="absolute inset-0 bg-primary/20 mix-blend-multiply z-10"></div>
-          <img
+          <Image
+            fill
             className="absolute inset-0 w-full h-full object-cover"
             alt="Modern Greenhouse"
             src="https://images.pexels.com/photos/35461528/pexels-photo-35461528.jpeg"
           />
 
-          <div className="absolute inset-0 z-20 flex flex-col justify-end p-8 xl:p-12 2xl:p-20 bg-gradient-to-t from-primary/90 via-primary/20 to-transparent">
+          <div className="absolute inset-0 z-20 flex flex-col justify-end p-8 xl:p-12 2xl:p-20 bg-linear-to-t from-primary/90 via-primary/20 to-transparent">
             <div className="backdrop-blur-md bg-white/10 border border-white/20 p-6 xl:p-8 2xl:p-10 rounded-3xl xl:rounded-[2.5rem] space-y-4 xl:space-y-6 max-w-2xl">
               <span
                 className="material-symbols-outlined text-primary-fixed text-3xl xl:text-5xl"
