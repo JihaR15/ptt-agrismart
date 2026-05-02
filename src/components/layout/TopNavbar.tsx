@@ -74,7 +74,7 @@ const TopNavbar: React.FC<TopNavbarProps> = ({
                 alt="Profile"
                 src={
                   session?.user?.image ||
-                  "https://i.pinimg.com/474x/52/06/61/520661b91f68268b0f147778b3b87c5e.jpg"
+                  "https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png?utm_source=commons.wikimedia.org&utm_campaign=index&utm_content=original"
                 }
                 width={32}
                 height={32}
