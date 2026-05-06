@@ -20,6 +20,8 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const { data: session } = useSession();
 
+  const isAdmin = session?.user?.role === "admin";
+
   const handleLogout = async () => {
     const confirmLogout = window.confirm("Apakah Anda yakin ingin keluar?");
     if (confirmLogout) {
@@ -71,62 +73,148 @@ const Sidebar: React.FC<SidebarProps> = ({
         <nav
           className={`flex-1 space-y-2 overflow-y-auto overflow-x-hidden ${isDesktopCollapsed ? "px-2" : "px-4"}`}
         >
-          <Link
-            href="/dashboard"
-            onClick={onMobileClose}
-            className={`flex items-center gap-3 py-3 font-medium transition-all duration-200 rounded-lg group
+          {!isAdmin && (
+            <>
+              <Link
+                href="/dashboard"
+                onClick={onMobileClose}
+                className={`flex items-center gap-3 py-3 font-medium transition-all duration-200 rounded-lg group
               ${isDesktopCollapsed ? "justify-center px-0" : "px-4"}
               ${isActive("/dashboard") ? "text-primary-container font-bold border-r-4 border-primary bg-emerald-100/50" : "text-on-surface-variant hover:bg-emerald-50"}
             `}
-            title={isDesktopCollapsed ? "Dasbor" : ""}
-          >
-            <span
-              className={`material-symbols-outlined ${isActive("/dashboard") ? "text-primary" : "text-outline group-hover:text-primary"}`}
-            >
-              dashboard
-            </span>
-            {!isDesktopCollapsed && (
-              <span className="font-headline whitespace-nowrap">Dasbor</span>
-            )}
-          </Link>
-          <Link
-            href="/devices"
-            onClick={onMobileClose}
-            className={`flex items-center gap-3 py-3 font-medium transition-all duration-200 rounded-lg group
+                title={isDesktopCollapsed ? "Dasbor" : ""}
+              >
+                <span
+                  className={`material-symbols-outlined ${isActive("/dashboard") ? "text-primary" : "text-outline group-hover:text-primary"}`}
+                >
+                  dashboard
+                </span>
+                {!isDesktopCollapsed && (
+                  <span className="font-headline whitespace-nowrap">
+                    Dasbor
+                  </span>
+                )}
+              </Link>
+              <Link
+                href="/devices"
+                onClick={onMobileClose}
+                className={`flex items-center gap-3 py-3 font-medium transition-all duration-200 rounded-lg group
               ${isDesktopCollapsed ? "justify-center px-0" : "px-4"}
               ${isActive("/devices") ? "text-primary-container font-bold border-r-4 border-primary bg-emerald-100/50" : "text-on-surface-variant hover:bg-emerald-50"}
             `}
-            title={isDesktopCollapsed ? "Manajemen Perangkat" : ""}
-          >
-            <span
-              className={`material-symbols-outlined ${isActive("/devices") ? "text-primary" : "text-outline group-hover:text-primary"}`}
-            >
-              precision_manufacturing
-            </span>
-            {!isDesktopCollapsed && (
-              <span className="font-headline whitespace-nowrap">
-                Manajemen Perangkat
-              </span>
-            )}
-          </Link>
-          <Link
-            href="/history"
-            onClick={onMobileClose}
-            className={`flex items-center gap-3 py-3 font-medium transition-all duration-200 rounded-lg group
+                title={isDesktopCollapsed ? "Manajemen Perangkat" : ""}
+              >
+                <span
+                  className={`material-symbols-outlined ${isActive("/devices") ? "text-primary" : "text-outline group-hover:text-primary"}`}
+                >
+                  precision_manufacturing
+                </span>
+                {!isDesktopCollapsed && (
+                  <span className="font-headline whitespace-nowrap">
+                    Manajemen Perangkat
+                  </span>
+                )}
+              </Link>
+              <Link
+                href="/history"
+                onClick={onMobileClose}
+                className={`flex items-center gap-3 py-3 font-medium transition-all duration-200 rounded-lg group
               ${isDesktopCollapsed ? "justify-center px-0" : "px-4"}
               ${isActive("/history") ? "text-primary-container font-bold border-r-4 border-primary bg-emerald-100/50" : "text-on-surface-variant hover:bg-emerald-50"}
             `}
-            title={isDesktopCollapsed ? "Riwayat" : ""}
-          >
-            <span
-              className={`material-symbols-outlined ${isActive("/history") ? "text-primary" : "text-outline group-hover:text-primary"}`}
-            >
-              history
-            </span>
-            {!isDesktopCollapsed && (
-              <span className="font-headline whitespace-nowrap">Riwayat</span>
-            )}
-          </Link>
+                title={isDesktopCollapsed ? "Riwayat" : ""}
+              >
+                <span
+                  className={`material-symbols-outlined ${isActive("/history") ? "text-primary" : "text-outline group-hover:text-primary"}`}
+                >
+                  history
+                </span>
+                {!isDesktopCollapsed && (
+                  <span className="font-headline whitespace-nowrap">
+                    Riwayat
+                  </span>
+                )}
+              </Link>
+            </>
+          )}
+
+          {isAdmin && (
+            <>
+              {/* <div className="pt-6 pb-2">
+                {!isDesktopCollapsed && (
+                  <p className="text-[10px] font-bold text-primary uppercase tracking-widest px-4 mb-2">
+                    Admin Panel
+                  </p>
+                )}
+                {isDesktopCollapsed && (
+                  <div className="h-px w-full bg-emerald-200/50 my-2"></div>
+                )}
+              </div> */}
+
+              <Link
+                href="/admin"
+                onClick={onMobileClose}
+                className={`flex items-center gap-3 py-3 font-medium transition-all duration-200 rounded-lg group
+              ${isDesktopCollapsed ? "justify-center px-0" : "px-4"}
+              ${router.pathname === "/admin" ? "text-primary-container font-bold border-r-4 border-primary bg-emerald-100/50" : "text-on-surface-variant hover:bg-emerald-50"}
+            `}
+                title={isDesktopCollapsed ? "Admin Panel" : ""}
+              >
+                <span
+                  className={`material-symbols-outlined ${isActive("/admin") ? "text-primary" : "text-outline group-hover:text-primary"}`}
+                >
+                  admin_panel_settings
+                </span>
+                {!isDesktopCollapsed && (
+                  <span className="font-headline whitespace-nowrap">
+                    Admin Panel
+                  </span>
+                )}
+              </Link>
+
+              <Link
+                href="/admin/users"
+                onClick={onMobileClose}
+                className={`flex items-center gap-3 py-3 font-medium transition-all duration-200 rounded-lg group
+              ${isDesktopCollapsed ? "justify-center px-0" : "px-4"}
+              ${isActive("/admin/users") ? "text-primary-container font-bold border-r-4 border-primary bg-emerald-100/50" : "text-on-surface-variant hover:bg-emerald-50"}
+            `}
+                title={isDesktopCollapsed ? "Pengguna" : ""}
+              >
+                <span
+                  className={`material-symbols-outlined ${isActive("/admin/users") ? "text-primary" : "text-outline group-hover:text-primary"}`}
+                >
+                  people
+                </span>
+                {!isDesktopCollapsed && (
+                  <span className="font-headline whitespace-nowrap">
+                    Pengguna
+                  </span>
+                )}
+              </Link>
+
+              <Link
+                href="/admin/devices"
+                onClick={onMobileClose}
+                className={`flex items-center gap-3 py-3 font-medium transition-all duration-200 rounded-lg group
+              ${isDesktopCollapsed ? "justify-center px-0" : "px-4"}
+              ${isActive("/admin/devices") ? "text-primary-container font-bold border-r-4 border-primary bg-emerald-100/50" : "text-on-surface-variant hover:bg-emerald-50"}
+            `}
+                title={isDesktopCollapsed ? "Master Perangkat" : ""}
+              >
+                <span
+                  className={`material-symbols-outlined ${isActive("/admin/devices") ? "text-primary" : "text-outline group-hover:text-primary"}`}
+                >
+                  qr_code_2
+                </span>
+                {!isDesktopCollapsed && (
+                  <span className="font-headline whitespace-nowrap">
+                    Master Perangkat
+                  </span>
+                )}
+              </Link>
+            </>
+          )}
         </nav>
 
         <div

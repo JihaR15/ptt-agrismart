@@ -16,7 +16,17 @@ export async function MainMiddleware(request: NextRequest) {
     if (token) {
         if (pathname.startsWith("/auth")) {
             // arahin ke dashboard
-            return NextResponse.redirect(new URL("/dashboard", request.url));
+            if (token.role === "admin") {
+                return NextResponse.redirect(new URL("/admin", request.url));
+            } else {
+                return NextResponse.redirect(new URL("/dashboard", request.url));
+            }
+        }
+
+        if (token.role === "admin") {
+            if (pathname.startsWith("/dashboard") || pathname.startsWith("/devices") || pathname.startsWith("/history")) {
+                return NextResponse.redirect(new URL("/admin", request.url));
+            }
         }
     }
 
@@ -27,6 +37,9 @@ export default withAuth(MainMiddleware, [
   "/dashboard",
   "/devices",
   "/history",
+  "/admin",
+  "/admin/users",
+  "/admin/devices"
 ]);
 
 export const config = {

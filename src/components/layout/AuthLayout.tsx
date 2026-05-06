@@ -11,7 +11,7 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({
   return (
     <>
       <Head>
-        <title>{reverse ? "Register" : "Login"} - AgriSmart</title>
+        <title>{`${reverse ? "Register" : "Login"} - AgriSmart`}</title>
         <meta
           name="description"
           content="AgriSmart IoT - Smart Plant Care System"
