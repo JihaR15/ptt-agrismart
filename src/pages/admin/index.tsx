@@ -1,15 +1,218 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Head from "next/head";
+import {
+  collection,
+  getCountFromServer,
+  query,
+  where,
+  Timestamp,
+  orderBy,
+  limit,
+  onSnapshot,
+} from "firebase/firestore";
+import { ref, onValue } from "firebase/database";
+import { db, realtimeDb } from "../../lib/firebase";
+import mqtt from "mqtt";
 
 const AdminDashboard: React.FC = () => {
+  // === STATE METRIK UTAMA ===
+  const [totalUsers, setTotalUsers] = useState<number | string>("...");
+  const [activePots, setActivePots] = useState<number | string>("...");
+  const [todayLogs, setTodayLogs] = useState<number | string>("...");
+
+  // === STATE SINKRONISASI LOG (FIRESTORE) ===
+  const [latestLogTime, setLatestLogTime] = useState<number | null>(null);
+  const [lastLogSyncText, setLastLogSyncText] = useState("Menghitung...");
+
+  // === STATE MQTT BROKER (SERVER) ===
+  const [brokerStatus, setBrokerStatus] = useState("Menghubungkan...");
+  const [isBrokerOnline, setIsBrokerOnline] = useState(false);
+
+  // === STATE ESP32 (RTDB) ===
+  const [espLastPingText, setEspLastPingText] = useState("Menunggu data...");
+
+  useEffect(() => {
+    // 1. Fetch Metrik Statis Firestore
+    const fetchMetrics = async () => {
+      try {
+        const usersSnap = await getCountFromServer(collection(db, "users"));
+        setTotalUsers(usersSnap.data().count);
+
+        const devicesSnap = await getCountFromServer(collection(db, "devices"));
+        setActivePots(devicesSnap.data().count);
+
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+        const logsQuery = query(
+          collection(db, "history_log"),
+          where("timestamp", ">=", Timestamp.fromDate(startOfToday)),
+        );
+        const logsSnap = await getCountFromServer(logsQuery);
+        setTodayLogs(logsSnap.data().count);
+      } catch (error) {
+        console.error("Gagal mengambil metrik:", error);
+      }
+    };
+
+    fetchMetrics();
+
+    // 2. Listener untuk Log Terakhir (history_log)
+    const latestLogQuery = query(
+      collection(db, "history_log"),
+      orderBy("timestamp", "desc"),
+      limit(1),
+    );
+    const unsubscribeLogs = onSnapshot(latestLogQuery, (snapshot) => {
+      if (!snapshot.empty) {
+        const latestData = snapshot.docs[0].data();
+        if (latestData.timestamp) {
+          setLatestLogTime(latestData.timestamp.toMillis());
+        }
+      } else {
+        setLastLogSyncText("Belum ada log");
+      }
+    });
+
+    // 3. Listener Realtime untuk Status ESP32 (RTDB)
+    const pingRef = ref(realtimeDb, "/agrismart/status/last_ping");
+    const unsubscribePing = onValue(pingRef, (snapshot) => {
+      const lastPing = snapshot.val();
+      if (lastPing) {
+        const diffMinutes = (Date.now() - lastPing) / 1000 / 60;
+        if (diffMinutes < 1) {
+          setEspLastPingText("ESP32: Online (Baru saja)");
+        } else if (diffMinutes <= 3) {
+          setEspLastPingText("ESP32: Online");
+        } else {
+          setEspLastPingText(
+            `ESP32: Offline (${Math.floor(diffMinutes)} mnt lalu)`,
+          );
+        }
+      }
+    });
+
+    // 4. KONEKSI LANGSUNG KE MQTT BROKER DENGAN FIX TABRAKAN KONEKSI
+    // Buat Client ID unik agar koneksi tidak saling bertabrakan
+    const uniqueClientId = `admin_dash_${Math.random().toString(16).slice(2, 10)}`;
+
+    const mqttClient = mqtt.connect("wss://agrismart-mqtt.duckdns.org", {
+      clientId: uniqueClientId,
+      keepalive: 60, // Menjaga koneksi tetap hidup lebih stabil
+    });
+
+    mqttClient.on("connect", () => {
+      // Cegah update state jika klien sedang dalam proses dimatikan oleh React
+      if (mqttClient.disconnecting || mqttClient.disconnected) return;
+
+      setBrokerStatus("Server Online");
+      setIsBrokerOnline(true);
+    });
+
+    mqttClient.on("reconnect", () => {
+      if (mqttClient.disconnecting || mqttClient.disconnected) return;
+
+      setBrokerStatus("Menghubungkan ulang...");
+      setIsBrokerOnline(false);
+    });
+
+    mqttClient.on("offline", () => {
+      if (mqttClient.disconnecting) return;
+
+      setBrokerStatus("Server Offline");
+      setIsBrokerOnline(false);
+    });
+
+    mqttClient.on("error", () => {
+      setBrokerStatus("Server Error");
+      setIsBrokerOnline(false);
+    });
+
+    return () => {
+      unsubscribeLogs();
+      unsubscribePing();
+
+      // Tambahkan param "true" untuk force disconnect agar bersih saat pindah halaman
+      mqttClient.end(true);
+    };
+  }, []);
+
+  // 5. Timer untuk memperbarui teks "Sync: X mnt lalu" setiap 1 menit
+  useEffect(() => {
+    if (!latestLogTime) return;
+
+    const updateSyncText = () => {
+      const diffMinutes = Math.floor((Date.now() - latestLogTime) / 60000);
+
+      if (diffMinutes < 1) {
+        setLastLogSyncText("Sync: Baru saja");
+      } else if (diffMinutes < 60) {
+        setLastLogSyncText(`Sync: ${diffMinutes} mnt lalu`);
+      } else if (diffMinutes < 1440) {
+        setLastLogSyncText(`Sync: ${Math.floor(diffMinutes / 60)} jam lalu`);
+      } else {
+        setLastLogSyncText(`Sync: ${Math.floor(diffMinutes / 1440)} hari lalu`);
+      }
+    };
+
+    updateSyncText();
+    const interval = setInterval(updateSyncText, 60000);
+    return () => clearInterval(interval);
+  }, [latestLogTime]);
+
+  useEffect(() => {
+    // 1. Buat ID unik khusus untuk halaman Admin agar tidak tabrakan dengan halaman Pot
+    const uniqueAdminId = `admin_checker_${Math.random().toString(16).slice(2, 10)}`;
+
+    // 2. Lakukan koneksi ke AWS
+    // (Ingat: gunakan ws://...:8083 jika belum pakai HTTPS/SSL)
+    const adminMqttClient = mqtt.connect(
+      "ws://agrismart-mqtt.duckdns.org:8083",
+      {
+        clientId: uniqueAdminId,
+        keepalive: 30, // Cek detak jantung server setiap 30 detik
+      },
+    );
+
+    // 3. Jika berhasil nyambung ke AWS
+    adminMqttClient.on("connect", () => {
+      if (adminMqttClient.disconnecting || adminMqttClient.disconnected) return;
+      setBrokerStatus("Server Online");
+      setIsBrokerOnline(true);
+    });
+
+    // 4. Jika sedang mencoba nyambung ulang (AWS mungkin sibuk)
+    adminMqttClient.on("reconnect", () => {
+      if (adminMqttClient.disconnecting || adminMqttClient.disconnected) return;
+      setBrokerStatus("Menghubungkan ulang...");
+      setIsBrokerOnline(false);
+    });
+
+    // 5. Jika AWS mati atau koneksi internet laptopmu putus
+    adminMqttClient.on("offline", () => {
+      if (adminMqttClient.disconnecting) return;
+      setBrokerStatus("Server Offline");
+      setIsBrokerOnline(false);
+    });
+
+    adminMqttClient.on("error", (err) => {
+      console.error("Gagal nyambung ke AWS:", err);
+      setBrokerStatus("Server Error");
+      setIsBrokerOnline(false);
+    });
+
+    // 6. Saat pindah halaman dari Dasbor, matikan koneksi "checker" ini
+    return () => {
+      adminMqttClient.end(true);
+    };
+  }, []); // Array kosong = hanya dijalankan sekali saat Dasbor Admin dibuka
+
   return (
     <>
       <Head>
         <title>Dasbor Admin | AgriSmart</title>
       </Head>
 
-      <main className="p-4 md:p-8 grow flex flex-col gap-8 w-full mx-auto">
-        {/* Page Header */}
+      <main className="p-4 md:p-8 grow flex flex-col gap-8 w-full mx-auto max-w-7xl">
         <div className="mb-2">
           <h2 className="text-2xl md:text-[1.75rem] font-bold font-headline text-on-surface">
             Ringkasan Sistem
@@ -19,9 +222,8 @@ const AdminDashboard: React.FC = () => {
           </p>
         </div>
 
-        {/* Bento Grid Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          {/* Metric 1: Total Pengguna (Large/Wide) */}
+          {/* Metric 1: Total Pengguna */}
           <div className="md:col-span-2 bg-surface-container-lowest rounded-xl p-6 relative overflow-hidden flex flex-col justify-between shadow-sm border border-emerald-50 group">
             <div className="absolute -right-10 -top-10 w-48 h-48 bg-primary-container opacity-5 rounded-full blur-3xl transition-all duration-500 group-hover:scale-150"></div>
             <div className="flex justify-between items-start mb-8 relative z-10">
@@ -30,7 +232,7 @@ const AdminDashboard: React.FC = () => {
                   Total Pengguna
                 </p>
                 <h3 className="text-4xl md:text-[3.5rem] leading-none font-bold font-headline text-on-surface mt-2 tracking-tight">
-                  124
+                  {totalUsers}
                 </h3>
               </div>
               <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center text-primary">
@@ -43,7 +245,7 @@ const AdminDashboard: React.FC = () => {
               <span className="material-symbols-outlined text-[1rem]">
                 trending_up
               </span>
-              <span className="font-bold">+12% bulan ini</span>
+              <span className="font-bold">Total akun terdaftar</span>
             </div>
           </div>
 
@@ -56,12 +258,12 @@ const AdminDashboard: React.FC = () => {
                 </span>
               </div>
               <span className="px-2 py-1 rounded bg-emerald-100 text-emerald-800 text-[0.7rem] font-bold font-body">
-                Sehat
+                Terklaim
               </span>
             </div>
             <div>
               <h3 className="text-3xl md:text-[2rem] leading-tight font-bold font-headline text-on-surface">
-                89
+                {activePots}
               </h3>
               <p className="text-[0.75rem] font-bold text-on-surface-variant font-body mt-1">
                 Pot Pintar Aktif
@@ -80,24 +282,27 @@ const AdminDashboard: React.FC = () => {
             </div>
             <div>
               <h3 className="text-3xl md:text-[2rem] leading-tight font-bold font-headline text-on-surface">
-                12.4k
+                {todayLogs}
               </h3>
               <p className="text-[0.75rem] font-bold text-on-surface-variant font-body mt-1">
                 Log Data Hari Ini
               </p>
               <p className="text-[0.65rem] text-outline font-body mt-2">
-                Sync: 2 mnt lalu
+                {lastLogSyncText}
               </p>
             </div>
           </div>
 
-          {/* Metric 4: MQTT Status */}
-          <div className="md:col-span-4 bg-gradient-to-r from-primary to-primary-container rounded-xl p-6 text-white flex flex-col md:flex-row justify-between items-center relative overflow-hidden shadow-lg shadow-primary/20">
+          {/* Metric 4: MQTT Status (Broker Asli) */}
+          <div
+            className={`md:col-span-4 rounded-xl p-6 text-white flex flex-col md:flex-row justify-between items-center relative overflow-hidden shadow-lg transition-colors duration-500
+            ${isBrokerOnline ? "bg-gradient-to-r from-primary to-primary-container shadow-primary/20" : "bg-gradient-to-r from-red-600 to-red-800 shadow-red-900/20"}`}
+          >
             <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop')] bg-cover bg-center mix-blend-overlay opacity-10"></div>
             <div className="flex items-center gap-4 md:gap-6 relative z-10 mb-4 md:mb-0 w-full md:w-auto">
               <div className="w-14 h-14 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center text-white shrink-0">
                 <span className="material-symbols-outlined text-[2rem]">
-                  hub
+                  {isBrokerOnline ? "hub" : "portable_wifi_off"}
                 </span>
               </div>
               <div>
@@ -105,159 +310,20 @@ const AdminDashboard: React.FC = () => {
                   Status MQTT Broker
                 </p>
                 <h3 className="text-2xl font-bold font-headline mt-1 flex items-center gap-3">
-                  Online
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-300 animate-pulse shadow-[0_0_8px_rgba(110,231,183,0.8)]"></span>
+                  {brokerStatus}
+                  {isBrokerOnline && (
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-300 animate-pulse shadow-[0_0_8px_rgba(110,231,183,0.8)]"></span>
+                  )}
                 </h3>
               </div>
             </div>
             <div className="text-left md:text-right relative z-10 w-full md:w-auto">
-              <p className="text-3xl font-light font-headline">99.98%</p>
-              <p className="text-xs text-white/70 font-body mt-1">
-                Uptime 30 hari terakhir
+              <p className="text-2xl font-light font-headline">
+                {isBrokerOnline ? "Koneksi Web Stabil" : "Koneksi Web Terputus"}
               </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Content Sections Below Metrics */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-4">
-          {/* Section 1: Aktivitas Pengguna Terbaru */}
-          <div className="bg-surface-container-lowest rounded-xl p-6 md:p-8 flex flex-col shadow-sm border border-emerald-50">
-            <h3 className="text-[1.25rem] font-bold font-headline text-on-surface mb-6">
-              Aktivitas Pengguna Terbaru
-            </h3>
-            <div className="flex-grow space-y-4">
-              {/* Activity Item 1 */}
-              <div className="flex items-start gap-4 p-4 rounded-lg bg-surface-container-low transition-colors hover:bg-surface-container">
-                <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0 text-emerald-700">
-                  <span className="material-symbols-outlined text-[1rem]">
-                    add_circle
-                  </span>
-                </div>
-                <div className="flex-grow">
-                  <p className="text-[0.875rem] font-bold font-body text-on-surface">
-                    Budi Santoso mendaftarkan device baru
-                  </p>
-                  <p className="text-[0.75rem] font-body text-outline mt-1">
-                    Greenhouse Alpha - Pot #42
-                  </p>
-                </div>
-                <span className="text-[0.75rem] font-body text-outline whitespace-nowrap">
-                  10 mnt lalu
-                </span>
-              </div>
-              {/* Activity Item 2 */}
-              <div className="flex items-start gap-4 p-4 rounded-lg bg-surface-container-low transition-colors hover:bg-surface-container">
-                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 text-blue-700">
-                  <span className="material-symbols-outlined text-[1rem]">
-                    settings
-                  </span>
-                </div>
-                <div className="flex-grow">
-                  <p className="text-[0.875rem] font-bold font-body text-on-surface">
-                    Siti Rahma mengubah jadwal penyiraman
-                  </p>
-                  <p className="text-[0.75rem] font-body text-outline mt-1">
-                    Greenhouse Beta - Semua Pot
-                  </p>
-                </div>
-                <span className="text-[0.75rem] font-body text-outline whitespace-nowrap">
-                  1 jam lalu
-                </span>
-              </div>
-              {/* Activity Item 3 */}
-              <div className="flex items-start gap-4 p-4 rounded-lg bg-red-50 transition-colors hover:bg-red-100/50">
-                <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0 text-red-700">
-                  <span className="material-symbols-outlined text-[1rem]">
-                    warning
-                  </span>
-                </div>
-                <div className="flex-grow">
-                  <p className="text-[0.875rem] font-bold font-body text-on-surface">
-                    Peringatan sensor offline
-                  </p>
-                  <p className="text-[0.75rem] font-body text-outline mt-1">
-                    Koneksi terputus pada Pot #18
-                  </p>
-                </div>
-                <span className="text-[0.75rem] font-body text-outline whitespace-nowrap">
-                  2 jam lalu
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Section 2: Status Server & Jaringan */}
-          <div className="bg-surface-container-lowest rounded-xl p-6 md:p-8 flex flex-col shadow-sm border border-emerald-50">
-            <h3 className="text-[1.25rem] font-bold font-headline text-on-surface mb-6">
-              Status Server & Jaringan
-            </h3>
-            <div className="flex-grow flex flex-col justify-center gap-8">
-              {/* Status Bar 1 */}
-              <div>
-                <div className="flex justify-between items-end mb-2">
-                  <p className="text-[0.875rem] font-bold font-body text-on-surface">
-                    Beban CPU Server
-                  </p>
-                  <p className="text-[0.75rem] font-black font-body text-primary">
-                    34%
-                  </p>
-                </div>
-                <div className="w-full h-2 bg-surface-container-high rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-primary rounded-full"
-                    style={{ width: "34%" }}
-                  ></div>
-                </div>
-              </div>
-              {/* Status Bar 2 */}
-              <div>
-                <div className="flex justify-between items-end mb-2">
-                  <p className="text-[0.875rem] font-bold font-body text-on-surface">
-                    Penggunaan Memori
-                  </p>
-                  <p className="text-[0.75rem] font-black font-body text-emerald-600">
-                    62%
-                  </p>
-                </div>
-                <div className="w-full h-2 bg-surface-container-high rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-emerald-600 rounded-full"
-                    style={{ width: "62%" }}
-                  ></div>
-                </div>
-              </div>
-              {/* Status Bar 3 */}
-              <div>
-                <div className="flex justify-between items-end mb-2">
-                  <p className="text-[0.875rem] font-bold font-body text-on-surface">
-                    Kapasitas Penyimpanan DB
-                  </p>
-                  <p className="text-[0.75rem] font-black font-body text-outline">
-                    18%
-                  </p>
-                </div>
-                <div className="w-full h-2 bg-surface-container-high rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-outline-variant rounded-full"
-                    style={{ width: "18%" }}
-                  ></div>
-                </div>
-              </div>
-
-              <div className="mt-4 p-4 rounded-lg bg-emerald-50/50 border border-emerald-100 flex items-center gap-4">
-                <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700">
-                  <span className="material-symbols-outlined">cloud_done</span>
-                </div>
-                <div>
-                  <p className="text-[0.875rem] font-bold font-body text-emerald-900">
-                    Sistem Stabil
-                  </p>
-                  <p className="text-[0.75rem] font-body text-emerald-700/80 mt-1">
-                    Tidak ada anomali terdeteksi dalam 24 jam terakhir.
-                  </p>
-                </div>
-              </div>
+              <p className="text-sm text-white/90 font-bold font-body mt-2 bg-black/20 inline-block px-3 py-1 rounded-full backdrop-blur-sm">
+                {espLastPingText}
+              </p>
             </div>
           </div>
         </div>
