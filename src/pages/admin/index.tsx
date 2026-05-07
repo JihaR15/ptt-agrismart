@@ -73,31 +73,11 @@ const AdminDashboard: React.FC = () => {
       }
     });
 
-    // 3. Listener Realtime untuk Status ESP32 (RTDB)
-    const pingRef = ref(realtimeDb, "/agrismart/status/last_ping");
-    const unsubscribePing = onValue(pingRef, (snapshot) => {
-      const lastPing = snapshot.val();
-      if (lastPing) {
-        const diffMinutes = (Date.now() - lastPing) / 1000 / 60;
-        if (diffMinutes < 1) {
-          setEspLastPingText("ESP32: Online (Baru saja)");
-        } else if (diffMinutes <= 3) {
-          setEspLastPingText("ESP32: Online");
-        } else {
-          setEspLastPingText(
-            `ESP32: Offline (${Math.floor(diffMinutes)} mnt lalu)`,
-          );
-        }
-      }
-    });
-
-    // 4. KONEKSI LANGSUNG KE MQTT BROKER DENGAN FIX TABRAKAN KONEKSI
-    // Buat Client ID unik agar koneksi tidak saling bertabrakan
     const uniqueClientId = `admin_dash_${Math.random().toString(16).slice(2, 10)}`;
 
-    const mqttClient = mqtt.connect("wss://agrismart-mqtt.duckdns.org", {
+    const mqttClient = mqtt.connect("wss://agrismart-mqtt.duckdns.org:8084/", {
       clientId: uniqueClientId,
-      keepalive: 60, // Menjaga koneksi tetap hidup lebih stabil
+      keepalive: 60,
     });
 
     mqttClient.on("connect", () => {
@@ -106,6 +86,27 @@ const AdminDashboard: React.FC = () => {
 
       setBrokerStatus("Server Online");
       setIsBrokerOnline(true);
+
+      mqttClient.subscribe("agrismart/+/status"); 
+      mqttClient.subscribe("agrismart/+/sensor");
+    });
+
+    mqttClient.on("message", (topic, message) => {
+      const payload = message.toString();
+
+      // Skenario A: Mendapat status dari Surat Wasiat (LWT) / Retained
+      if (topic.endsWith("/status")) {
+        if (payload === "online") {
+          setEspLastPingText("ESP32: Online (Tersambung)");
+        } else if (payload === "offline") {
+          setEspLastPingText("ESP32: Offline (Koneksi Terputus)");
+        }
+      }
+
+      // Skenario B: Mendapat kiriman data sensor (Artinya alat pasti sedang hidup)
+      if (topic.endsWith("/sensor")) {
+        setEspLastPingText("ESP32: Online (Mengirim Data)");
+      }
     });
 
     mqttClient.on("reconnect", () => {
@@ -129,10 +130,10 @@ const AdminDashboard: React.FC = () => {
 
     return () => {
       unsubscribeLogs();
-      unsubscribePing();
+      // unsubscribePing();
 
       // Tambahkan param "true" untuk force disconnect agar bersih saat pindah halaman
-      mqttClient.end(true);
+      mqttClient.end();
     };
   }, []);
 
@@ -158,53 +159,6 @@ const AdminDashboard: React.FC = () => {
     const interval = setInterval(updateSyncText, 60000);
     return () => clearInterval(interval);
   }, [latestLogTime]);
-
-  useEffect(() => {
-    // 1. Buat ID unik khusus untuk halaman Admin agar tidak tabrakan dengan halaman Pot
-    const uniqueAdminId = `admin_checker_${Math.random().toString(16).slice(2, 10)}`;
-
-    // 2. Lakukan koneksi ke AWS
-    // (Ingat: gunakan ws://...:8083 jika belum pakai HTTPS/SSL)
-    const adminMqttClient = mqtt.connect(
-      "ws://agrismart-mqtt.duckdns.org:8083",
-      {
-        clientId: uniqueAdminId,
-        keepalive: 30, // Cek detak jantung server setiap 30 detik
-      },
-    );
-
-    // 3. Jika berhasil nyambung ke AWS
-    adminMqttClient.on("connect", () => {
-      if (adminMqttClient.disconnecting || adminMqttClient.disconnected) return;
-      setBrokerStatus("Server Online");
-      setIsBrokerOnline(true);
-    });
-
-    // 4. Jika sedang mencoba nyambung ulang (AWS mungkin sibuk)
-    adminMqttClient.on("reconnect", () => {
-      if (adminMqttClient.disconnecting || adminMqttClient.disconnected) return;
-      setBrokerStatus("Menghubungkan ulang...");
-      setIsBrokerOnline(false);
-    });
-
-    // 5. Jika AWS mati atau koneksi internet laptopmu putus
-    adminMqttClient.on("offline", () => {
-      if (adminMqttClient.disconnecting) return;
-      setBrokerStatus("Server Offline");
-      setIsBrokerOnline(false);
-    });
-
-    adminMqttClient.on("error", (err) => {
-      console.error("Gagal nyambung ke AWS:", err);
-      setBrokerStatus("Server Error");
-      setIsBrokerOnline(false);
-    });
-
-    // 6. Saat pindah halaman dari Dasbor, matikan koneksi "checker" ini
-    return () => {
-      adminMqttClient.end(true);
-    };
-  }, []); // Array kosong = hanya dijalankan sekali saat Dasbor Admin dibuka
 
   return (
     <>
@@ -296,7 +250,7 @@ const AdminDashboard: React.FC = () => {
           {/* Metric 4: MQTT Status (Broker Asli) */}
           <div
             className={`md:col-span-4 rounded-xl p-6 text-white flex flex-col md:flex-row justify-between items-center relative overflow-hidden shadow-lg transition-colors duration-500
-            ${isBrokerOnline ? "bg-gradient-to-r from-primary to-primary-container shadow-primary/20" : "bg-gradient-to-r from-red-600 to-red-800 shadow-red-900/20"}`}
+            ${isBrokerOnline ? "bg-linear-to-r from-primary to-primary-container shadow-primary/20" : "bg-linear-to-r from-red-600 to-red-800 shadow-red-900/20"}`}
           >
             <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop')] bg-cover bg-center mix-blend-overlay opacity-10"></div>
             <div className="flex items-center gap-4 md:gap-6 relative z-10 mb-4 md:mb-0 w-full md:w-auto">
@@ -322,7 +276,10 @@ const AdminDashboard: React.FC = () => {
                 {isBrokerOnline ? "Koneksi Web Stabil" : "Koneksi Web Terputus"}
               </p>
               <p className="text-sm text-white/90 font-bold font-body mt-2 bg-black/20 inline-block px-3 py-1 rounded-full backdrop-blur-sm">
-                {espLastPingText}
+                {espLastPingText.includes("Offline") 
+                  ? `ESP32: Offline (${lastLogSyncText.replace("Sync: ", "")})` 
+                  : espLastPingText
+                }
               </p>
             </div>
           </div>
