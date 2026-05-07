@@ -26,6 +26,10 @@ export const authOptions: NextAuthOptions = {
                 if (!user) {
                     throw new Error("Email tidak terdaftar");
                 }
+
+                if (user.isDeleted) {
+                    throw new Error("Akun Anda telah dinonaktifkan oleh Admin.");
+                }
             
                 const isPasswordValid = await bcrypt.compare(
                     credentials.password,
@@ -66,14 +70,17 @@ export const authOptions: NextAuthOptions = {
                     image: user.image,
                     type: account.provider,
                 };
-                await new Promise((resolve) => {
+                await new Promise((resolve, reject) => { 
                     signInOAuth(data, (result: any) => {
                         if (result.status) {
                             token.fullName = result.data.fullName;
                             token.role = result.data.role;
                             token.allowedDevices = result.data.allowedDevices || [];
+                            resolve(true);
+                        } else {
+                            // --- TAMBAHAN: Lempar error agar login Google digagalkan ---
+                            reject(new Error(result.message));
                         }
-                        resolve(true);
                     });
                 });
             }

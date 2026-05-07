@@ -86,11 +86,19 @@ export async function signInOAuth(userData: any, callback: Function) {
         message: "User successfully logged in",
         data: userData,
       });
+
+      if (existingUser.isDeleted) {
+        callback({
+          status: false,
+          message: "Akun Anda telah dinonaktifkan oleh Admin.",
+        });
+        return; // Hentikan eksekusi kode di bawahnya
+      }
     } else {
-      userData.role = "user";
-      userData.allowedDevices = [];
+      userData.role = existingUser.role;
+      userData.allowedDevices = existingUser.allowedDevices || []; 
       
-      await addDoc(collection(db, "users"), userData);
+      await updateDoc(doc(db, "users", existingUser.id), userData);
       callback({
         status: true,
         message: "New user registered and logged in",
