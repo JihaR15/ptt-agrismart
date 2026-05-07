@@ -11,6 +11,7 @@ import {
   query,
   where,
   getDocs,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 
@@ -31,7 +32,7 @@ const AddDeviceModal: React.FC<AddDeviceModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const handleSave = async () => {
+const handleSave = async () => {
     if (!deviceId.trim() || !deviceName.trim()) {
       setError("Device ID dan Nama Perangkat wajib diisi.");
       return;
@@ -49,17 +50,24 @@ const AddDeviceModal: React.FC<AddDeviceModalProps> = ({
       const masterRef = doc(db, "master_devices", deviceId);
       const masterSnap = await getDoc(masterRef);
 
+      // Validasi Master Device
       if (!masterSnap.exists()) {
-        setError(
-          "Device ID tidak valid atau tidak dikenali oleh sistem pusat.",
-        );
+        setError("Device ID tidak valid atau tidak dikenali oleh sistem pusat.");
         setIsLoading(false);
         return;
+      }
+      
+      // Validasi apakah sudah diklaim orang lain
+      if (masterSnap.data().status === false) {
+         setError("Perangkat ini sudah diklaim oleh pengguna lain.");
+         setIsLoading(false);
+         return;
       }
 
       const deviceRef = doc(db, "devices", deviceId);
       const deviceSnap = await getDoc(deviceRef);
 
+      // Validasi Duplikasi
       if (deviceSnap.exists()) {
         setError("Perangkat ini sudah didaftarkan. Harap gunakan ID lain.");
         setIsLoading(false);
@@ -81,16 +89,29 @@ const AddDeviceModal: React.FC<AddDeviceModalProps> = ({
       const userId = querySnapshot.docs[0].id;
       const userRef = doc(db, "users", userId);
 
-      await updateDoc(userRef, {
+      const batch = writeBatch(db);
+
+      // Masukkan ID ke array allowedDevices milik User
+      batch.update(userRef, {
         allowedDevices: arrayUnion(deviceId),
       });
 
+      // Ubah status Master Device menjadi false (Terklaim)
+      batch.update(masterRef, {
+        status: false
+      });
+
       // Simpan metadata perangkat ke koleksi 'devices'
-      await setDoc(deviceRef, {
+      batch.set(deviceRef, {
         name: deviceName,
         ownerEmail: session.user.email,
         createdAt: new Date().toISOString(),
+        targetMoisture: 60, // Default awal 60%
+        imageUrl: "https://images.unsplash.com/photo-1592841200221-a6898f307baa?w=150&auto=format&fit=crop" // Gambar default
       });
+
+      // Eksekusi semua secara bersamaan
+      await batch.commit();
 
       setDeviceId("");
       setDeviceName("");
