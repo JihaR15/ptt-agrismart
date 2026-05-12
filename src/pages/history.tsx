@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import DashboardLayout from "../components/layout/DashboardLayout";
+import { useSession } from "next-auth/react";
 import {
   collection,
   query,
@@ -10,10 +10,10 @@ import {
   endBefore,
   limitToLast,
   getCountFromServer,
-  where, // <-- Tambahan untuk Filter
+  where,
   QueryDocumentSnapshot,
   DocumentData,
-  QueryConstraint, // <-- Tambahan tipe data
+  QueryConstraint,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import jsPDF from "jspdf";
@@ -33,12 +33,33 @@ interface HistoryLog {
   action: ActionStatus;
 }
 
+interface UserDevice {
+  id: string;
+  name: string;
+}
+
 const PAGE_SIZE = 10;
 
+// Fungsi anti-error untuk membaca berbagai format tanggal dari database
+const parseFirestoreDate = (timestamp: any): Date => {
+  if (!timestamp) return new Date();
+  if (typeof timestamp.toDate === "function") return timestamp.toDate();
+  if (typeof timestamp === "number") return new Date(timestamp);
+  if (typeof timestamp === "string") return new Date(timestamp);
+  if (timestamp instanceof Date) return timestamp;
+  return new Date();
+};
+
 const History: React.FC = () => {
+  const { data: session } = useSession(); // Ambil data session user
+
   const [historyData, setHistoryData] = useState<HistoryLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // === STATE UNTUK DATA PERANGKAT USER ===
+  const [userDevices, setUserDevices] = useState<UserDevice[]>([]);
+  const [devicesLoading, setDevicesLoading] = useState(true);
 
   // === STATE UNTUK FILTER (UI State) ===
   const [uiTimeRange, setUiTimeRange] = useState("Semua Waktu");
@@ -47,13 +68,12 @@ const History: React.FC = () => {
 
   const [isExporting, setIsExporting] = useState(false);
 
-  // === STATE UNTUK FILTER YANG AKTIF (Diterapkan setelah tombol ditekan) ===
   const [activeFilters, setActiveFilters] = useState({
     timeRange: "Semua Waktu",
     actionStatus: "Semua Status",
+    deviceSensor: "Semua Perangkat",
   });
 
-  // State Navigasi & Paginasi
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [lastVisible, setLastVisible] =
@@ -67,11 +87,37 @@ const History: React.FC = () => {
   const endItemIndex = startItemIndex + historyData.length - 1;
   const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
 
+  // 1. FETCH PERANGKAT MILIK USER
+  useEffect(() => {
+    const fetchUserDevices = async () => {
+      if (!session?.user?.email) return;
+
+      try {
+        const q = query(
+          collection(db, "devices"),
+          where("ownerEmail", "==", session.user.email)
+        );
+        const snapshot = await getDocs(q);
+        const devices: UserDevice[] = [];
+        snapshot.forEach((doc) => {
+          devices.push({ id: doc.id, name: doc.data().name });
+        });
+        setUserDevices(devices);
+      } catch (error) {
+        console.error("Gagal mengambil perangkat user:", error);
+      } finally {
+        setDevicesLoading(false);
+      }
+    };
+
+    fetchUserDevices();
+  }, [session]);
+
   const formatSnapshot = (snapshot: any) => {
     const data: HistoryLog[] = [];
     snapshot.forEach((doc: any) => {
       const item = doc.data();
-      const dateObj = item.timestamp?.toDate() || new Date();
+      const dateObj = parseFirestoreDate(item.timestamp);
       data.push({
         id: doc.id,
         date: dateObj.toLocaleDateString("id-ID", {
@@ -92,20 +138,30 @@ const History: React.FC = () => {
     return data;
   };
 
-  // === FUNGSI PEMBUAT QUERY FILTER ===
   const getQueryConstraints = useCallback(() => {
     const constraints: QueryConstraint[] = [];
 
-    // 1. Filter Status Aksi
+    // Filter Kepemilikan Perangkat
+    if (activeFilters.deviceSensor !== "Semua Perangkat") {
+      constraints.push(where("deviceId", "==", activeFilters.deviceSensor));
+    } else {
+      // Jika "Semua Perangkat", pastikan HANYA mengambil dari device miliknya
+      if (userDevices.length > 0) {
+        const deviceIds = userDevices.map((d) => d.id);
+        constraints.push(where("deviceId", "in", deviceIds));
+      } else {
+        // Jika user tidak punya device satupun, cegah tampil data apapun
+        constraints.push(where("deviceId", "==", "NO_DEVICES"));
+      }
+    }
+
     if (activeFilters.actionStatus !== "Semua Status") {
       let statusValue = activeFilters.actionStatus;
-      // Cocokkan teks UI dengan teks asli di database
       if (statusValue === "Peringatan Kritis")
         statusValue = "Peringatan: Kelembapan Tinggi";
       constraints.push(where("action", "==", statusValue));
     }
 
-    // 2. Filter Rentang Waktu
     if (activeFilters.timeRange !== "Semua Waktu") {
       const now = new Date();
       let startDate = new Date();
@@ -115,29 +171,24 @@ const History: React.FC = () => {
       } else if (activeFilters.timeRange === "30 Hari Terakhir") {
         startDate.setDate(now.getDate() - 30);
       } else if (activeFilters.timeRange === "Bulan Ini") {
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1); // Tanggal 1 bulan ini
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       }
-
       constraints.push(where("timestamp", ">=", startDate));
     }
 
-    // WAJIB: Selalu urutkan dari yang terbaru
     constraints.push(orderBy("timestamp", "desc"));
     return constraints;
-  }, [activeFilters]);
+  }, [activeFilters, userDevices]);
 
-  // Fungsi Fetch Data Utama (Gunakan useCallback agar aman dipanggil di useEffect)
   const fetchInitialData = useCallback(async () => {
-    const historyRef = collection(db, "history_log");
+    const historyRef = collection(db, "history-log2");
     const constraints = getQueryConstraints();
 
     try {
-      // Hitung total data berdasarkan filter yang aktif
       const countQuery = query(historyRef, ...constraints);
       const countSnapshot = await getCountFromServer(countQuery);
       setTotalCount(countSnapshot.data().count);
 
-      // Ambil data Halaman 1 berdasarkan filter
       const q = query(historyRef, ...constraints, limit(PAGE_SIZE));
       const snapshot = await getDocs(q);
 
@@ -153,54 +204,57 @@ const History: React.FC = () => {
       }
     } catch (error) {
       console.error("Gagal mengambil data awal:", error);
-      // Peringatan untuk user terkait Index Firestore
       if (String(error).includes("index")) {
         alert(
-          "Buka Console Browser (F12)! Klik link dari Firebase untuk membuat Index Query.",
+          "Firebase Index Error: Buka Console Browser (F12)! Klik link dari Firebase untuk membuat Index Query untuk deviceId dan timestamp."
         );
       }
     }
   }, [getQueryConstraints]);
 
-  // Pantau perubahan filter aktif untuk memuat ulang data
+  // Pantau perubahan agar history berjalan HANYA setelah device loading selesai
   useEffect(() => {
+    if (devicesLoading) return; // Tunggu pengecekan perangkat selesai
+
     const loadData = async () => {
       setLoading(true);
-      await fetchInitialData();
+      if (userDevices.length === 0) {
+        // Jika tidak punya perangkat, tidak perlu query ke history
+        setHistoryData([]);
+        setTotalCount(0);
+      } else {
+        await fetchInitialData();
+      }
       setLoading(false);
     };
     loadData();
-  }, [fetchInitialData]);
+  }, [fetchInitialData, devicesLoading, userDevices.length]);
 
-  // Saat tombol "Terapkan Filter" diklik
   const handleApplyFilter = () => {
-    setCurrentPage(1); // Kembali ke halaman 1
+    setCurrentPage(1);
     setActiveFilters({
       timeRange: uiTimeRange,
       actionStatus: uiActionStatus,
+      deviceSensor: uiDeviceSensor,
     });
-    // fetchInitialData akan otomatis berjalan karena terpantau oleh useEffect di atas
   };
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
     setCurrentPage(1);
     await fetchInitialData();
-    setTimeout(() => {
-      setIsRefreshing(false);
-    }, 500);
+    setTimeout(() => setIsRefreshing(false), 500);
   };
 
   const fetchNextPage = async () => {
     if (!lastVisible) return;
     setLoading(true);
     const q = query(
-      collection(db, "history_log"),
+      collection(db, "history-log2"),
       ...getQueryConstraints(),
       startAfter(lastVisible),
-      limit(PAGE_SIZE),
+      limit(PAGE_SIZE)
     );
-
     const snapshot = await getDocs(q);
     if (!snapshot.empty) {
       setFirstVisible(snapshot.docs[0]);
@@ -216,12 +270,11 @@ const History: React.FC = () => {
     if (!firstVisible || currentPage === 1) return;
     setLoading(true);
     const q = query(
-      collection(db, "history_log"),
+      collection(db, "history-log2"),
       ...getQueryConstraints(),
       endBefore(firstVisible),
-      limitToLast(PAGE_SIZE),
+      limitToLast(PAGE_SIZE)
     );
-
     const snapshot = await getDocs(q);
     if (!snapshot.empty) {
       setFirstVisible(snapshot.docs[0]);
@@ -234,31 +287,24 @@ const History: React.FC = () => {
   };
 
   const renderStatusBadge = (action: ActionStatus) => {
-    // ... (Fungsi badge tetap sama)
     switch (action) {
       case "Stabil":
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>{" "}
-            Stabil
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Stabil
           </span>
         );
       case "Penyiraman Otomatis":
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700">
-            <span className="material-symbols-outlined text-[14px]">
-              water_drop
-            </span>{" "}
+            <span className="material-symbols-outlined text-[14px]">water_drop</span>{" "}
             Penyiraman Otomatis
           </span>
         );
       case "Peringatan: Kelembapan Tinggi":
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700">
-            <span className="material-symbols-outlined text-[14px]">
-              warning
-            </span>{" "}
-            Peringatan
+            <span className="material-symbols-outlined text-[14px]">warning</span> Peringatan
           </span>
         );
       default:
@@ -269,11 +315,8 @@ const History: React.FC = () => {
   const handleExportPDF = async () => {
     setIsExporting(true);
     try {
-      // 1. Ambil batasan filter yang sedang aktif
       const constraints = getQueryConstraints();
-
-      // 2. Fetch SEMUA data yang cocok dengan filter (tanpa limit pagination)
-      const historyRef = collection(db, "history_log");
+      const historyRef = collection(db, "history-log2");
       const q = query(historyRef, ...constraints);
       const snapshot = await getDocs(q);
 
@@ -283,11 +326,10 @@ const History: React.FC = () => {
         return;
       }
 
-      // 3. Format data untuk AutoTable
       const tableData: any[][] = [];
       snapshot.forEach((doc) => {
         const item = doc.data();
-        const dateObj = item.timestamp?.toDate() || new Date();
+        const dateObj = parseFirestoreDate(item.timestamp);
         const dateStr = dateObj.toLocaleDateString("id-ID", {
           day: "numeric",
           month: "long",
@@ -308,45 +350,36 @@ const History: React.FC = () => {
         ]);
       });
 
-      // 4. Inisialisasi Dokumen PDF (Kertas A4)
-      const doc = new jsPDF("portrait", "mm", "a4");
+      const docPDF = new jsPDF("portrait", "mm", "a4");
 
-      // 5. Tambahkan Header/Kop Laporan
-      doc.setFontSize(18);
-      doc.setTextColor(6, 78, 59); // Warna text-emerald-900
-      doc.text("Laporan Historis Sensor AgriSmart", 14, 22);
+      docPDF.setFontSize(18);
+      docPDF.setTextColor(6, 78, 59);
+      docPDF.text("Laporan Historis Sensor AgriSmart", 14, 22);
 
-      doc.setFontSize(10);
-      doc.setTextColor(100, 116, 139); // Warna abu-abu
-      doc.text(
-        `Filter Waktu: ${activeFilters.timeRange} | Status: ${activeFilters.actionStatus}`,
+      docPDF.setFontSize(10);
+      docPDF.setTextColor(100, 116, 139);
+      docPDF.text(
+        `Filter Waktu: ${activeFilters.timeRange} | Perangkat: ${activeFilters.deviceSensor}`,
         14,
-        30,
+        30
       );
-      doc.text(`Dicetak pada: ${new Date().toLocaleString("id-ID")}`, 14, 35);
+      docPDF.text(`Dicetak pada: ${new Date().toLocaleString("id-ID")}`, 14, 35);
 
-      // 6. Buat Tabel
-      autoTable(doc, {
+      autoTable(docPDF, {
         startY: 42,
         head: [["Tanggal", "Waktu", "Kelembapan", "Suhu", "Status Aksi"]],
         body: tableData,
         theme: "grid",
         headStyles: {
-          fillColor: [16, 185, 129], // Warna bg-emerald-500
+          fillColor: [16, 185, 129],
           textColor: 255,
           fontStyle: "bold",
         },
-        alternateRowStyles: {
-          fillColor: [236, 253, 245], // Warna bg-emerald-50
-        },
-        styles: {
-          fontSize: 9,
-          cellPadding: 4,
-        },
+        alternateRowStyles: { fillColor: [236, 253, 245] },
+        styles: { fontSize: 9, cellPadding: 4 },
       });
 
-      // 7. Unduh File
-      doc.save(`Laporan_AgriSmart_${new Date().getTime()}.pdf`);
+      docPDF.save(`Laporan_AgriSmart_${new Date().getTime()}.pdf`);
     } catch (error) {
       console.error("Gagal mengekspor PDF:", error);
       alert("Terjadi kesalahan saat memproses PDF.");
@@ -358,57 +391,43 @@ const History: React.FC = () => {
   return (
     <>
       <div className="max-w-7xl mx-auto">
-        {/* Header Section */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-10 gap-6">
           <div>
             <h2 className="font-headline text-3xl font-extrabold text-emerald-900 tracking-tight">
               Log Aktivitas Sensor
             </h2>
             <p className="text-neutral-600 mt-2 font-body">
-              Pemantauan real-time dan histori kondisi greenhouse
+              Pemantauan real-time dan histori kondisi perangkat aktif Anda.
             </p>
           </div>
 
           <div className="flex items-center gap-3 w-full md:w-auto">
             <button
               onClick={handleRefresh}
-              disabled={isRefreshing || loading}
+              disabled={isRefreshing || loading || devicesLoading}
               className="flex items-center justify-center gap-2 bg-white border-2 border-emerald-100 text-emerald-800 px-5 py-2.5 rounded-full font-semibold shadow-sm hover:bg-emerald-50 hover:border-emerald-200 active:scale-95 transition-all disabled:opacity-50 flex-1 md:flex-none"
             >
-              <span
-                className={`material-symbols-outlined text-lg ${isRefreshing ? "animate-spin" : ""}`}
-              >
+              <span className={`material-symbols-outlined text-lg ${isRefreshing ? "animate-spin" : ""}`}>
                 refresh
               </span>
-              <span className="hidden sm:inline">
-                {isRefreshing ? "Menyegarkan..." : "Segarkan Data"}
-              </span>
+              <span className="hidden sm:inline">Segarkan Data</span>
             </button>
             <button
               onClick={handleExportPDF}
               disabled={isExporting || loading || historyData.length === 0}
               className="flex items-center justify-center gap-2 bg-gradient-to-r from-primary to-primary-container text-white px-6 py-3 rounded-full font-semibold shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all flex-1 md:flex-none disabled:opacity-50 disabled:hover:scale-100"
             >
-              <span
-                className={`material-symbols-outlined text-lg ${isExporting ? "animate-spin" : ""}`}
-              >
+              <span className={`material-symbols-outlined text-lg ${isExporting ? "animate-spin" : ""}`}>
                 {isExporting ? "sync" : "picture_as_pdf"}
               </span>
-              <span className="hidden sm:inline">
-                {isExporting ? "Memproses..." : "Ekspor ke PDF"}
-              </span>
+              <span className="hidden sm:inline">Ekspor ke PDF</span>
             </button>
           </div>
         </div>
 
-        {/* === FILTER BAR YANG SUDAH BERFUNGSI === */}
         <div className="bg-surface-container-lowest rounded-xl p-6 mb-10 border border-emerald-50 shadow-sm flex flex-wrap items-center gap-6">
-          {/* Filter 1: Rentang Waktu */}
           <div className="flex flex-col gap-1.5 flex-1 min-w-[200px]">
-            <label
-              htmlFor="timeRange"
-              className="text-[0.75rem] font-bold text-on-surface-variant px-1 uppercase tracking-wider"
-            >
+            <label className="text-[0.75rem] font-bold text-on-surface-variant px-1 uppercase tracking-wider">
               Rentang Waktu
             </label>
             <div className="relative">
@@ -416,12 +435,11 @@ const History: React.FC = () => {
                 calendar_today
               </span>
               <select
-                id="timeRange"
                 value={uiTimeRange}
                 onChange={(e) => setUiTimeRange(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 bg-surface-container-low border-none rounded-lg text-sm focus:ring-2 focus:ring-primary appearance-none outline-none cursor-pointer"
               >
-                <option>Semua Waktu</option> {/* Pilihan default baru */}
+                <option>Semua Waktu</option>
                 <option>7 Hari Terakhir</option>
                 <option>30 Hari Terakhir</option>
                 <option>Bulan Ini</option>
@@ -429,12 +447,8 @@ const History: React.FC = () => {
             </div>
           </div>
 
-          {/* Filter 2: Perangkat Sensor (Non-fungsional sementara) */}
-          <div className="flex flex-col gap-1.5 flex-1 min-w-[200px] opacity-70 cursor-not-allowed">
-            <label
-              htmlFor="deviceSensor"
-              className="text-[0.75rem] font-bold text-on-surface-variant px-1 uppercase tracking-wider"
-            >
+          <div className="flex flex-col gap-1.5 flex-1 min-w-[200px]">
+            <label className="text-[0.75rem] font-bold text-on-surface-variant px-1 uppercase tracking-wider">
               Perangkat Sensor
             </label>
             <div className="relative">
@@ -442,21 +456,23 @@ const History: React.FC = () => {
                 sensors
               </span>
               <select
-                disabled
-                className="w-full pl-10 pr-4 py-2.5 bg-surface-container-low border-none rounded-lg text-sm cursor-not-allowed"
-                title="Fitur akan datang"
+                value={uiDeviceSensor}
+                onChange={(e) => setUiDeviceSensor(e.target.value)}
+                disabled={devicesLoading || userDevices.length === 0}
+                className="w-full pl-10 pr-4 py-2.5 bg-surface-container-low border-none rounded-lg text-sm focus:ring-2 focus:ring-primary appearance-none outline-none cursor-pointer disabled:opacity-50"
               >
-                <option>Semua Perangkat</option>
+                <option value="Semua Perangkat">Semua Perangkat</option>
+                {userDevices.map((device) => (
+                  <option key={device.id} value={device.id}>
+                    {device.name} ({device.id})
+                  </option>
+                ))}
               </select>
             </div>
           </div>
 
-          {/* Filter 3: Status Aksi */}
           <div className="flex flex-col gap-1.5 flex-1 min-w-[200px]">
-            <label
-              htmlFor="actionStatus"
-              className="text-[0.75rem] font-bold text-on-surface-variant px-1 uppercase tracking-wider"
-            >
+            <label className="text-[0.75rem] font-bold text-on-surface-variant px-1 uppercase tracking-wider">
               Status Aksi
             </label>
             <div className="relative">
@@ -464,7 +480,6 @@ const History: React.FC = () => {
                 filter_list
               </span>
               <select
-                id="actionStatus"
                 value={uiActionStatus}
                 onChange={(e) => setUiActionStatus(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 bg-surface-container-low border-none rounded-lg text-sm focus:ring-2 focus:ring-primary appearance-none outline-none cursor-pointer"
@@ -477,11 +492,10 @@ const History: React.FC = () => {
             </div>
           </div>
 
-          {/* Tombol Terapkan */}
           <div className="flex items-end h-full self-end mt-4 lg:mt-0">
             <button
               onClick={handleApplyFilter}
-              disabled={loading}
+              disabled={loading || devicesLoading}
               className="bg-primary text-white px-6 py-2.5 rounded-lg font-bold text-sm hover:opacity-90 active:scale-95 transition-all w-full disabled:opacity-50"
             >
               Terapkan Filter
@@ -489,83 +503,57 @@ const History: React.FC = () => {
           </div>
         </div>
 
-        {/* Data Table Section */}
         <div className="bg-surface-container-lowest rounded-xl shadow-2xl shadow-emerald-900/5 overflow-hidden mb-8 border border-emerald-50">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-surface-container-low">
-                  <th className="px-8 py-4 text-[0.75rem] font-semibold text-on-surface-variant uppercase tracking-wider">
-                    Tanggal
-                  </th>
-                  <th className="px-8 py-4 text-[0.75rem] font-semibold text-on-surface-variant uppercase tracking-wider">
-                    Waktu
-                  </th>
-                  <th className="px-8 py-4 text-[0.75rem] font-semibold text-on-surface-variant uppercase tracking-wider">
-                    Kelembapan (%)
-                  </th>
-                  <th className="px-8 py-4 text-[0.75rem] font-semibold text-on-surface-variant uppercase tracking-wider">
-                    Suhu (°C)
-                  </th>
-                  <th className="px-8 py-4 text-[0.75rem] font-semibold text-on-surface-variant uppercase tracking-wider">
-                    Aksi Terdeteksi
-                  </th>
-                  <th className="px-8 py-4 text-[0.75rem] font-semibold text-on-surface-variant uppercase tracking-wider text-right">
-                    Detail
-                  </th>
+                  <th className="px-8 py-4 text-[0.75rem] font-semibold text-on-surface-variant uppercase tracking-wider">Tanggal</th>
+                  <th className="px-8 py-4 text-[0.75rem] font-semibold text-on-surface-variant uppercase tracking-wider">Waktu</th>
+                  <th className="px-8 py-4 text-[0.75rem] font-semibold text-on-surface-variant uppercase tracking-wider">Kelembapan (%)</th>
+                  <th className="px-8 py-4 text-[0.75rem] font-semibold text-on-surface-variant uppercase tracking-wider">Suhu (°C)</th>
+                  <th className="px-8 py-4 text-[0.75rem] font-semibold text-on-surface-variant uppercase tracking-wider">Aksi Terdeteksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-surface-container-low">
-                {loading || isRefreshing ? (
+                {devicesLoading ? (
                   <tr>
-                    <td colSpan={6} className="px-8 py-12 text-center">
+                    <td colSpan={5} className="px-8 py-12 text-center">
                       <div className="flex flex-col items-center justify-center gap-3">
-                        <span className="material-symbols-outlined animate-spin text-primary text-3xl">
-                          sync
-                        </span>
-                        <p className="text-neutral-500 font-medium">
-                          Memuat data dari server...
-                        </p>
+                        <span className="material-symbols-outlined animate-spin text-primary text-3xl">sync</span>
+                        <p className="text-neutral-500 font-medium">Memverifikasi perangkat pengguna...</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : userDevices.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-8 py-10 text-center text-neutral-500 font-medium">
+                      Anda belum memiliki perangkat yang terdaftar.
+                    </td>
+                  </tr>
+                ) : loading || isRefreshing ? (
+                  <tr>
+                    <td colSpan={5} className="px-8 py-12 text-center">
+                      <div className="flex flex-col items-center justify-center gap-3">
+                        <span className="material-symbols-outlined animate-spin text-primary text-3xl">sync</span>
+                        <p className="text-neutral-500 font-medium">Memuat data log perangkat...</p>
                       </div>
                     </td>
                   </tr>
                 ) : historyData.length === 0 ? (
                   <tr>
-                    <td
-                      colSpan={6}
-                      className="px-8 py-10 text-center text-neutral-500 font-medium"
-                    >
+                    <td colSpan={5} className="px-8 py-10 text-center text-neutral-500 font-medium">
                       Tidak ada data yang cocok dengan filter.
                     </td>
                   </tr>
                 ) : (
                   historyData.map((log) => (
-                    <tr
-                      key={log.id}
-                      className="hover:bg-emerald-50/30 transition-colors group"
-                    >
-                      <td className="px-8 py-5 text-sm font-medium">
-                        {log.date}
-                      </td>
-                      <td className="px-8 py-5 text-sm text-zinc-600 font-mono">
-                        {log.time}
-                      </td>
-                      <td className="px-8 py-5 text-sm font-headline font-bold text-primary">
-                        {log.moisture}
-                      </td>
-                      <td className="px-8 py-5 text-sm font-headline font-bold text-emerald-800">
-                        {log.temperature}
-                      </td>
-                      <td className="px-8 py-5">
-                        {renderStatusBadge(log.action)}
-                      </td>
-                      <td className="px-8 py-5 text-right">
-                        <button className="text-zinc-400 hover:text-primary transition-colors">
-                          <span className="material-symbols-outlined">
-                            chevron_right
-                          </span>
-                        </button>
-                      </td>
+                    <tr key={log.id} className="hover:bg-emerald-50/30 transition-colors group">
+                      <td className="px-8 py-5 text-sm font-medium">{log.date}</td>
+                      <td className="px-8 py-5 text-sm text-zinc-600 font-mono">{log.time}</td>
+                      <td className="px-8 py-5 text-sm font-headline font-bold text-primary">{log.moisture}</td>
+                      <td className="px-8 py-5 text-sm font-headline font-bold text-emerald-800">{log.temperature}</td>
+                      <td className="px-8 py-5">{renderStatusBadge(log.action)}</td>
                     </tr>
                   ))
                 )}
@@ -573,28 +561,17 @@ const History: React.FC = () => {
             </table>
           </div>
 
-          {/* Pagination */}
           <div className="px-8 py-4 bg-surface-container-lowest flex justify-between items-center text-sm text-neutral-500 border-t border-surface-container-low">
             <p>
-              Menampilkan{" "}
-              <span className="font-bold">
-                {startItemIndex} - {endItemIndex}
-              </span>{" "}
-              dari{" "}
-              <span className="font-bold">
-                {totalCount.toLocaleString("id-ID")}
-              </span>{" "}
-              data
+              Menampilkan <span className="font-bold">{startItemIndex} - {endItemIndex}</span> dari <span className="font-bold">{totalCount.toLocaleString("id-ID")}</span> data
             </p>
             <div className="flex gap-1">
               <button
                 onClick={fetchPrevPage}
-                disabled={currentPage === 1 || loading || isRefreshing}
+                disabled={currentPage === 1 || loading || isRefreshing || devicesLoading}
                 className={`w-8 h-8 flex items-center justify-center rounded border border-outline-variant transition-colors ${currentPage === 1 || loading ? "opacity-50 cursor-not-allowed" : "hover:bg-emerald-50"}`}
               >
-                <span className="material-symbols-outlined text-sm">
-                  chevron_left
-                </span>
+                <span className="material-symbols-outlined text-sm">chevron_left</span>
               </button>
               <button className="w-8 h-8 flex items-center justify-center rounded bg-primary text-white font-bold transition-colors">
                 {currentPage}
@@ -602,23 +579,18 @@ const History: React.FC = () => {
               {currentPage < totalPages && (
                 <button
                   onClick={fetchNextPage}
-                  disabled={loading || isRefreshing}
+                  disabled={loading || isRefreshing || devicesLoading}
                   className="w-8 h-8 flex items-center justify-center rounded border border-outline-variant hover:bg-emerald-50 transition-colors"
                 >
                   {currentPage + 1}
                 </button>
               )}
-              {currentPage + 1 < totalPages && (
-                <span className="px-2 flex items-end pb-1 text-lg">...</span>
-              )}
               <button
                 onClick={fetchNextPage}
-                disabled={isLastPage || loading || isRefreshing}
+                disabled={isLastPage || loading || isRefreshing || devicesLoading}
                 className={`w-8 h-8 flex items-center justify-center rounded border border-outline-variant transition-colors ${isLastPage || loading ? "opacity-50 cursor-not-allowed" : "hover:bg-emerald-50"}`}
               >
-                <span className="material-symbols-outlined text-sm">
-                  chevron_right
-                </span>
+                <span className="material-symbols-outlined text-sm">chevron_right</span>
               </button>
             </div>
           </div>

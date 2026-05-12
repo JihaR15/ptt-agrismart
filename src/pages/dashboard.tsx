@@ -221,7 +221,7 @@ const Dashboard: React.FC = () => {
               </div>
               <div>
                 <h3 className="text-5xl font-headline font-extrabold text-on-surface">
-                  {sensorData.soilMoisture || "--"}
+                  {sensorData.soilMoisture ?? "--"}
                   <span className="text-2xl text-on-surface-variant">%</span>
                 </h3>
                 <p className="text-sm font-body text-primary mt-2 flex items-center gap-1 font-medium">
