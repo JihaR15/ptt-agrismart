@@ -222,7 +222,12 @@ const Sidebar: React.FC<SidebarProps> = ({
            ${isDesktopCollapsed ? "hidden lg:hidden" : "px-4 block"}
         `}
         >
-          <div className="p-4 bg-surface-container-lowest rounded-2xl mb-4 flex items-center gap-3 border border-emerald-50 shadow-sm">
+          <Link
+            href="/profile"
+            onClick={onMobileClose}
+            className="p-4 bg-surface-container-lowest rounded-2xl mb-4 flex items-center gap-3 border border-emerald-50 shadow-sm hover:bg-emerald-50/70 transition-colors"
+            title="Profil Saya"
+          >
             <Image
               className="w-10 h-10 rounded-full object-cover shrink-0"
               alt="Profile"
@@ -242,7 +247,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 {session?.user?.role || "Memuat..."}
               </p>
             </div>
-          </div>
+          </Link>
 
           <button
             onClick={handleLogout}

@@ -39,7 +39,8 @@ export default withAuth(MainMiddleware, [
   "/history",
   "/admin",
   "/admin/users",
-  "/admin/devices"
+  "/admin/devices",
+  "/profile",
 ]);
 
 export const config = {

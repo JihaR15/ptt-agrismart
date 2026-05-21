@@ -17,6 +17,8 @@ export default function App({
     if (path.startsWith("/dashboard")) return "Dasbor Utama";
     if (path.startsWith("/devices")) return "Manajemen Perangkat";
     if (path.startsWith("/history")) return "Riwayat Aktivitas";
+    if (path.startsWith("/profile/edit")) return "Edit Profil";
+    if (path.startsWith("/profile")) return "Profil Saya";
     return "AgriSmart";
   };
 
