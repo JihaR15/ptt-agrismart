@@ -30,10 +30,13 @@ const UserManagement: React.FC = () => {
     const fetchUsers = async () => {
       try {
         const querySnapshot = await getDocs(collection(db, "users"));
-        const usersList: UserData[] = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...(doc.data() as Omit<UserData, 'id'>)
-        }));
+        const usersList: UserData[] = querySnapshot.docs
+          .map(doc => ({
+            id: doc.id,
+            ...(doc.data() as Omit<UserData, 'id'>)
+          }))
+          .filter(user => user.role !== "admin");
+        
         setUsers(usersList);
       } catch (error) {
         console.error("Gagal mengambil data pengguna:", error);
