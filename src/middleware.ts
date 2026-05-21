@@ -10,6 +10,7 @@ export default withAuth(MainMiddleware, [
   "/dashboard",
   "/devices",
   "/history",
+  "/profile",
 ]);
 
 export const config = {

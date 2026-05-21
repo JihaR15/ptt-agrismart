@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import Image from "next/image";
+import Link from "next/link";
 
 interface TopNavbarProps {
   title: string;
@@ -95,6 +96,16 @@ const TopNavbar: React.FC<TopNavbarProps> = ({
 
             {isDropdownOpen && (
               <div className="absolute right-0 mt-2 w-48 bg-surface-container-lowest border border-emerald-50 shadow-lg rounded-xl py-2 z-50 overflow-hidden">
+                <Link
+                  href="/profile"
+                  onClick={() => setIsDropdownOpen(false)}
+                  className="w-full flex items-center gap-3 px-4 py-2 text-sm text-on-surface font-medium hover:bg-emerald-50 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-lg">
+                    account_circle
+                  </span>
+                  Profil Saya
+                </Link>
                 <button
                   onClick={handleLogout}
                   className="w-full flex items-center gap-3 px-4 py-2 text-sm text-error font-medium hover:bg-red-50 transition-colors"

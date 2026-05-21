@@ -93,3 +93,40 @@ export async function signInOAuth(userData: any, callback: Function) {
     });
   }
 }
+
+export async function updateUserProfileByEmail(
+  email: string,
+  payload: { fullName: string; image: string },
+) {
+  const q = query(collection(db, "users"), where("email", "==", email));
+  const querySnapshot = await getDocs(q);
+
+  if (querySnapshot.empty) {
+    return {
+      status: false,
+      message: "Pengguna tidak ditemukan.",
+    };
+  }
+
+  try {
+    const userDoc = querySnapshot.docs[0];
+    await updateDoc(doc(db, "users", userDoc.id), {
+      fullName: payload.fullName,
+      image: payload.image,
+    });
+
+    return {
+      status: true,
+      message: "Profil berhasil diperbarui.",
+      data: {
+        fullName: payload.fullName,
+        image: payload.image,
+      },
+    };
+  } catch (error) {
+    return {
+      status: false,
+      message: "Gagal memperbarui profil.",
+    };
+  }
+}

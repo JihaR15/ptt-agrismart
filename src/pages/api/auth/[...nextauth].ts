@@ -41,6 +41,7 @@ export const authOptions: NextAuthOptions = {
                     email: user.email,
                     fullName: user.fullName,
                     role: user.role,
+                    image: user.image || null,
                 };
             },
         }),
@@ -51,11 +52,18 @@ export const authOptions: NextAuthOptions = {
     ],
 
     callbacks: {
-        async jwt({ token, account, user }: any) {
+        async jwt({ token, account, user, trigger, session }: any) {
+            if (trigger === "update" && session) {
+                token.fullName = session.fullName || token.fullName;
+                token.image = session.image || token.image;
+            }
+
             if (account?.provider === "credentials" && user) {
+                token.id = user.id;
                 token.email = user.email;
                 token.fullName = user.fullName;
                 token.role = user.role;
+                token.image = user.image || token.image;
             }
             if (account?.provider === "google") {
                 const data = {
@@ -68,6 +76,7 @@ export const authOptions: NextAuthOptions = {
                     if (result.status) {
                         token.fullName = result.data.fullName;
                         token.role = result.data.role;
+                        token.image = result.data.image;
                     }
                 });
             }
@@ -76,8 +85,10 @@ export const authOptions: NextAuthOptions = {
         async session({ session, token }: any) {
             if (token) {
                 session.user.email = token.email;
+                session.user.id = token.id;
                 session.user.fullName = token.fullName;
                 session.user.role = token.role;
+                session.user.image = token.image;
             }
             return session;
         },

@@ -3,7 +3,7 @@ import Link from "next/link";
 import Head from "next/head";
 
 // IMPORT KONFIGURASI FIREBASE ANDA DI SINI
-import { db } from "../lib/firebase"; // Sesuaikan path ini dengan lokasi file konfigurasi Anda
+import { db } from "../lib/firebase"; 
 import { collection, getDocs } from "firebase/firestore";
 
 const LandingPage: React.FC = () => {
@@ -20,16 +20,15 @@ const LandingPage: React.FC = () => {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        // Mengambil semua dokumen di koleksi 'landing'
+    
         const querySnapshot = await getDocs(collection(db, "landing"));
         
         // Memastikan koleksi tidak kosong
         if (!querySnapshot.empty) {
-          // Mengambil dokumen pertama (karena di gambar Anda hanya butuh 1 dokumen stats)
           const data = querySnapshot.docs[0].data();
           
           setLandingStats({
-            pengguna: data.Pengguna || 0, // Perhatikan huruf kapital sesuai gambar Firestore Anda
+            pengguna: data.Pengguna || 0, 
             tanaman: data.Tanaman || 0,
             isLoading: false
           });
