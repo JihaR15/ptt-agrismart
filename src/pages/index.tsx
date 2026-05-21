@@ -1,49 +1,17 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import Head from "next/head";
+import { db } from "../lib/firebase"; 
+import { collection, getCountFromServer } from "firebase/firestore";
+import { GetStaticProps } from "next";
 
-// IMPORT KONFIGURASI FIREBASE ANDA DI SINI
-import { db } from "../lib/firebase"; // Sesuaikan path ini dengan lokasi file konfigurasi Anda
-import { collection, getDocs } from "firebase/firestore";
+interface LandingPageProps {
+  totalPengguna: number;
+  totalTanaman: number;
+}
 
-const LandingPage: React.FC = () => {
-  const [activeMenu, setActiveMenu] = useState<
-    "beranda" | "fitur" | "cara-kerja"
-  >("beranda");
-
-  // 1. BUAT STATE UNTUK MENYIMPAN DATA FIREBASE
-  const [landingStats, setLandingStats] = useState({
-    pengguna: 0,
-    tanaman: 0,
-    isLoading: true,
-  });
-
-  // 2. FETCH DATA DARI FIRESTORE SAAT KOMPONEN DIMUAT
-  useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        // Mengambil semua dokumen di koleksi 'landing'
-        const querySnapshot = await getDocs(collection(db, "landing"));
-
-        // Memastikan koleksi tidak kosong
-        if (!querySnapshot.empty) {
-          // Mengambil dokumen pertama (karena di gambar Anda hanya butuh 1 dokumen stats)
-          const data = querySnapshot.docs[0].data();
-
-          setLandingStats({
-            pengguna: data.Pengguna || 0, // Perhatikan huruf kapital sesuai gambar Firestore Anda
-            tanaman: data.Tanaman || 0,
-            isLoading: false,
-          });
-        }
-      } catch (error) {
-        console.error("Gagal mengambil data dari Firestore:", error);
-        setLandingStats((prev) => ({ ...prev, isLoading: false }));
-      }
-    };
-
-    fetchStats();
-  }, []);
+const LandingPage: React.FC<LandingPageProps> = ({ totalPengguna, totalTanaman }) => {
+  const [activeMenu, setActiveMenu] = useState<"beranda" | "fitur" | "cara-kerja">("beranda");
 
   return (
     <>
@@ -56,48 +24,29 @@ const LandingPage: React.FC = () => {
           <div className="flex justify-between items-center w-full max-w-7xl mx-auto sm:px-8 py-4">
             <div className="flex items-center gap-2">
               <div className="w-10 h-10 rounded-xl bg-primary-container flex items-center justify-center text-on-primary-container">
-                <span
-                  className="material-symbols-outlined"
-                  style={{ fontVariationSettings: "'FILL' 1" }}
-                >
-                  eco
-                </span>
+                <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>eco</span>
               </div>
-              <span className="text-2xl font-black text-primary tracking-tight font-headline">
-                AgriSmart
-              </span>
+              <span className="text-2xl font-black text-primary tracking-tight font-headline">AgriSmart</span>
             </div>
 
             <div className="hidden md:flex items-center gap-8">
               <a
                 href="#hero"
-                className={`${
-                  activeMenu === "beranda"
-                    ? "text-emerald-700 font-bold border-b-2 border-emerald-600"
-                    : "text-emerald-900/60 font-medium border-b-2 border-transparent"
-                } font-headline text-lg tracking-tight hover:text-emerald-600 transition-all duration-300`}
+                className={`${activeMenu === "beranda" ? "text-emerald-700 font-bold border-b-2 border-emerald-600" : "text-emerald-900/60 font-medium border-b-2 border-transparent"} font-headline text-lg tracking-tight hover:text-emerald-600 transition-all duration-300`}
                 onClick={() => setActiveMenu("beranda")}
               >
                 Beranda
               </a>
               <a
-                className={`${
-                  activeMenu === "fitur"
-                    ? "text-emerald-700 font-bold border-b-2 border-emerald-600"
-                    : "text-emerald-900/60 font-medium border-b-2 border-transparent"
-                } font-headline text-lg tracking-tight hover:text-emerald-600 transition-all duration-300`}
                 href="#fitur"
+                className={`${activeMenu === "fitur" ? "text-emerald-700 font-bold border-b-2 border-emerald-600" : "text-emerald-900/60 font-medium border-b-2 border-transparent"} font-headline text-lg tracking-tight hover:text-emerald-600 transition-all duration-300`}
                 onClick={() => setActiveMenu("fitur")}
               >
                 Fitur
               </a>
               <a
-                className={`${
-                  activeMenu === "cara-kerja"
-                    ? "text-emerald-700 font-bold border-b-2 border-emerald-600"
-                    : "text-emerald-900/60 font-medium border-b-2 border-transparent"
-                } font-headline text-lg tracking-tight hover:text-emerald-600 transition-all duration-300`}
                 href="#cara-kerja"
+                className={`${activeMenu === "cara-kerja" ? "text-emerald-700 font-bold border-b-2 border-emerald-600" : "text-emerald-900/60 font-medium border-b-2 border-transparent"} font-headline text-lg tracking-tight hover:text-emerald-600 transition-all duration-300`}
                 onClick={() => setActiveMenu("cara-kerja")}
               >
                 Cara Kerja
@@ -105,16 +54,10 @@ const LandingPage: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-2">
-              <Link
-                href="/auth/login"
-                className="px-6 py-2.5 rounded-full font-bold text-sm md:text-base border-2 border-emerald-600 text-emerald-700 bg-transparent hover:bg-emerald-50 transition-colors"
-              >
+              <Link href="/auth/login" className="px-6 py-2.5 rounded-full font-bold text-sm md:text-base border-2 border-emerald-600 text-emerald-700 bg-transparent hover:bg-emerald-50 transition-colors">
                 Masuk
               </Link>
-              <Link
-                href="/auth/register"
-                className="bg-primary-container text-on-primary-container px-6 py-2.5 rounded-full font-bold active:scale-95 transform transition-transform duration-200 hover:shadow-lg text-sm md:text-base"
-              >
+              <Link href="/auth/register" className="bg-primary-container text-on-primary-container px-6 py-2.5 rounded-full font-bold active:scale-95 transform transition-transform duration-200 hover:shadow-lg text-sm md:text-base">
                 Mulai Sekarang
               </Link>
             </div>
@@ -122,10 +65,7 @@ const LandingPage: React.FC = () => {
         </nav>
 
         <main className="pt-20">
-          <section
-            id="hero"
-            className="relative min-h-[90vh] flex items-center overflow-hidden px-6 md:px-8 py-12 md:py-0"
-          >
+          <section id="hero" className="relative min-h-[90vh] flex items-center overflow-hidden px-6 md:px-8 py-12 md:py-0">
             <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12 items-center w-full">
               <div className="z-10 space-y-8 text-center lg:text-left">
                 <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-secondary-container/50 text-on-secondary-fixed-variant text-xs md:text-sm font-semibold mx-auto lg:mx-0">
@@ -133,32 +73,17 @@ const LandingPage: React.FC = () => {
                   Teknologi IoT Masa Depan
                 </div>
                 <h1 className="font-headline font-extrabold text-5xl md:text-6xl lg:text-7xl text-on-surface leading-[1.1] tracking-tight">
-                  Presisi Alam dalam{" "}
-                  <span className="text-primary italic">Genggaman</span>
+                  Presisi Alam dalam <span className="text-primary italic">Genggaman</span>
                 </h1>
                 <p className="text-on-surface-variant max-w-xl mx-auto lg:mx-0 text-base md:text-lg leading-relaxed">
-                  Teknologi IoT tercanggih untuk perawatan pot tanaman Anda
-                  secara otomatis dan cerdas. Pantau kesehatan tanaman dengan
-                  presisi tinggi dari mana saja.
+                  Teknologi IoT tercanggih untuk perawatan pot tanaman Anda secara otomatis dan cerdas. Pantau kesehatan tanaman dengan presisi tinggi dari mana saja.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-4 pt-4 justify-center lg:justify-start">
-                  <Link
-                    href="/auth/register"
-                    className="bg-gradient-to-r from-primary to-primary-container text-white px-8 py-4 rounded-full font-bold text-lg shadow-xl shadow-primary/20 hover:scale-105 transition-transform active:scale-95 text-center"
-                  >
+                  <Link href="/auth/register" className="bg-gradient-to-r from-primary to-primary-container text-white px-8 py-4 rounded-full font-bold text-lg shadow-xl shadow-primary/20 hover:scale-105 transition-transform active:scale-95 text-center">
                     Mulai Bertani Cerdas
                   </Link>
-                  <button
-                    onClick={() =>
-                      alert(
-                        "Menampilkan pop-up video demo AgriSmart (coming soon...)",
-                      )
-                    }
-                    className="flex items-center justify-center gap-2 px-8 py-4 rounded-full font-bold text-lg text-primary hover:bg-primary/5 transition-colors"
-                  >
-                    <span className="material-symbols-outlined">
-                      play_circle
-                    </span>
+                  <button onClick={() => alert("Menampilkan pop-up video demo AgriSmart (coming soon...)")} className="flex items-center justify-center gap-2 px-8 py-4 rounded-full font-bold text-lg text-primary hover:bg-primary/5 transition-colors">
+                    <span className="material-symbols-outlined">play_circle</span>
                     Lihat Demo
                   </button>
                 </div>
@@ -167,29 +92,16 @@ const LandingPage: React.FC = () => {
               <div className="relative mt-8 lg:mt-0">
                 <div className="absolute -top-10 md:-top-20 -right-10 md:-right-20 w-64 md:w-96 h-64 md:h-96 bg-primary-fixed-dim/30 blur-[80px] md:blur-[100px] rounded-full"></div>
                 <div className="relative z-10 rounded-[2rem] overflow-hidden shadow-2xl">
-                  <img
-                    alt="AgriSmart Pot"
-                    className="w-full h-[400px] md:h-[600px] object-cover"
-                    src="https://images.pexels.com/photos/32702185/pexels-photo-32702185.jpeg"
-                  />
-
+                  <img alt="AgriSmart Pot" className="w-full h-[400px] md:h-[600px] object-cover" src="https://images.pexels.com/photos/32702185/pexels-photo-32702185.jpeg" />
                   <div className="absolute bottom-4 left-4 right-4 md:bottom-6 md:left-6 md:right-6 bg-white/60 backdrop-blur-md p-4 md:p-6 rounded-2xl border border-white/40 shadow-lg">
                     <div className="flex justify-between items-end">
                       <div>
-                        <p className="text-[10px] md:text-xs font-bold text-primary uppercase tracking-widest mb-1">
-                          Status Sensor
-                        </p>
-                        <p className="text-xl md:text-2xl font-headline font-extrabold text-on-surface">
-                          Optimal
-                        </p>
+                        <p className="text-[10px] md:text-xs font-bold text-primary uppercase tracking-widest mb-1">Status Sensor</p>
+                        <p className="text-xl md:text-2xl font-headline font-extrabold text-on-surface">Optimal</p>
                       </div>
                       <div className="text-right text-primary">
-                        <span className="text-2xl md:text-3xl font-headline font-extrabold">
-                          84%
-                        </span>
-                        <p className="text-[8px] md:text-[10px] font-bold uppercase">
-                          Kelembapan
-                        </p>
+                        <span className="text-2xl md:text-3xl font-headline font-extrabold">84%</span>
+                        <p className="text-[8px] md:text-[10px] font-bold uppercase">Kelembapan</p>
                       </div>
                     </div>
                   </div>
@@ -198,12 +110,13 @@ const LandingPage: React.FC = () => {
             </div>
           </section>
 
+          {/* === STATS SECTION (UPDATE) === */}
           <section className="py-8 md:py-12 bg-surface-container-low border-y border-outline-variant/10">
             <div className="max-w-7xl mx-auto px-8 flex flex-col md:flex-row justify-around items-center gap-8 md:gap-4">
               <div className="text-center">
                 <p className="text-3xl md:text-4xl font-headline font-extrabold text-primary">
-                  {/* Gunakan data Pengguna dari Firestore */}
-                  {landingStats.isLoading ? "..." : `${landingStats.pengguna}+`}
+                  {/* Langsung menggunakan variabel props */}
+                  {totalPengguna}+
                 </p>
                 <p className="text-xs md:text-sm font-semibold text-on-surface-variant uppercase tracking-wider mt-1">
                   Pecinta Tanaman
@@ -214,8 +127,8 @@ const LandingPage: React.FC = () => {
 
               <div className="text-center">
                 <p className="text-3xl md:text-4xl font-headline font-extrabold text-primary">
-                  {/* Gunakan data Tanaman dari Firestore */}
-                  {landingStats.isLoading ? "..." : `${landingStats.tanaman}+`}
+                  {/* Langsung menggunakan variabel props */}
+                  {totalTanaman}+
                 </p>
                 <p className="text-xs md:text-sm font-semibold text-on-surface-variant uppercase tracking-wider mt-1">
                   Tanaman Terpantau
@@ -465,6 +378,36 @@ const LandingPage: React.FC = () => {
       </div>
     </>
   );
+};
+
+export const getStaticProps: GetStaticProps = async () => {
+  try {
+    // 1. Menghitung langsung jumlah dokumen di tabel "users"
+    const collUsers = collection(db, "users");
+    const snapshotUsers = await getCountFromServer(collUsers);
+    
+    // 2. Menghitung langsung jumlah dokumen di tabel "devices"
+    const collDevices = collection(db, "devices");
+    const snapshotDevices = await getCountFromServer(collDevices);
+
+    return {
+      props: {
+        totalPengguna: snapshotUsers.data().count,
+        totalTanaman: snapshotDevices.data().count,
+      },
+      revalidate: 60, 
+    };
+  } catch (error) {
+    console.error("Gagal mengambil perhitungan dari Firestore:", error);
+
+    return {
+      props: {
+        totalPengguna: 0,
+        totalTanaman: 0,
+      },
+      revalidate: 60,
+    };
+  }
 };
 
 export default LandingPage;
