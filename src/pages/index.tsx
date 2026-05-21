@@ -7,13 +7,15 @@ import { db } from "../lib/firebase";
 import { collection, getDocs } from "firebase/firestore";
 
 const LandingPage: React.FC = () => {
-  const [activeMenu, setActiveMenu] = useState<"fitur" | "cara-kerja">("fitur");
+  const [activeMenu, setActiveMenu] = useState<
+    "beranda" | "fitur" | "cara-kerja"
+  >("beranda");
 
   // 1. BUAT STATE UNTUK MENYIMPAN DATA FIREBASE
   const [landingStats, setLandingStats] = useState({
     pengguna: 0,
     tanaman: 0,
-    isLoading: true
+    isLoading: true,
   });
 
   // 2. FETCH DATA DARI FIRESTORE SAAT KOMPONEN DIMUAT
@@ -22,15 +24,15 @@ const LandingPage: React.FC = () => {
       try {
     
         const querySnapshot = await getDocs(collection(db, "landing"));
-        
+
         // Memastikan koleksi tidak kosong
         if (!querySnapshot.empty) {
           const data = querySnapshot.docs[0].data();
-          
+
           setLandingStats({
             pengguna: data.Pengguna || 0, 
             tanaman: data.Tanaman || 0,
-            isLoading: false
+            isLoading: false,
           });
         }
       } catch (error) {
@@ -42,10 +44,6 @@ const LandingPage: React.FC = () => {
     fetchStats();
   }, []);
 
-
-
-  
-
   return (
     <>
       <Head>
@@ -54,12 +52,33 @@ const LandingPage: React.FC = () => {
 
       <div className="bg-background font-body text-on-background selection:bg-primary-fixed selection:text-on-primary-fixed overflow-x-hidden">
         <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-lg border-b border-emerald-50">
-          <div className="flex justify-between items-center w-full max-w-7xl mx-auto px-6 md:px-8 py-4">
-            <div className="text-2xl font-extrabold font-headline text-emerald-800">
-              AgriSmart
+          <div className="flex justify-between items-center w-full max-w-7xl mx-auto sm:px-8 py-4">
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 rounded-xl bg-primary-container flex items-center justify-center text-on-primary-container">
+                <span
+                  className="material-symbols-outlined"
+                  style={{ fontVariationSettings: "'FILL' 1" }}
+                >
+                  eco
+                </span>
+              </div>
+              <span className="text-2xl font-black text-primary tracking-tight font-headline">
+                AgriSmart
+              </span>
             </div>
 
             <div className="hidden md:flex items-center gap-8">
+              <a
+                href="#hero"
+                className={`${
+                  activeMenu === "beranda"
+                    ? "text-emerald-700 font-bold border-b-2 border-emerald-600"
+                    : "text-emerald-900/60 font-medium border-b-2 border-transparent"
+                } font-headline text-lg tracking-tight hover:text-emerald-600 transition-all duration-300`}
+                onClick={() => setActiveMenu("beranda")}
+              >
+                Beranda
+              </a>
               <a
                 className={`${
                   activeMenu === "fitur"
@@ -82,25 +101,30 @@ const LandingPage: React.FC = () => {
               >
                 Cara Kerja
               </a>
+            </div>
+
+            <div className="flex items-center gap-2">
               <Link
                 href="/auth/login"
-                className="text-emerald-900/60 font-medium font-headline text-lg tracking-tight hover:text-emerald-600 transition-all duration-300"
+                className="px-6 py-2.5 rounded-full font-bold text-sm md:text-base border-2 border-emerald-600 text-emerald-700 bg-transparent hover:bg-emerald-50 transition-colors"
               >
                 Masuk
               </Link>
+              <Link
+                href="/auth/register"
+                className="bg-primary-container text-on-primary-container px-6 py-2.5 rounded-full font-bold active:scale-95 transform transition-transform duration-200 hover:shadow-lg text-sm md:text-base"
+              >
+                Mulai Sekarang
+              </Link>
             </div>
-
-            <Link
-              href="/auth/register"
-              className="bg-primary-container text-on-primary-container px-6 py-2.5 rounded-full font-bold active:scale-95 transform transition-transform duration-200 hover:shadow-lg text-sm md:text-base"
-            >
-              Mulai Sekarang
-            </Link>
           </div>
         </nav>
 
         <main className="pt-20">
-          <section className="relative min-h-[90vh] flex items-center overflow-hidden px-6 md:px-8 py-12 md:py-0">
+          <section
+            id="hero"
+            className="relative min-h-[90vh] flex items-center overflow-hidden px-6 md:px-8 py-12 md:py-0"
+          >
             <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12 items-center w-full">
               <div className="z-10 space-y-8 text-center lg:text-left">
                 <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-secondary-container/50 text-on-secondary-fixed-variant text-xs md:text-sm font-semibold mx-auto lg:mx-0">
@@ -123,9 +147,14 @@ const LandingPage: React.FC = () => {
                   >
                     Mulai Bertani Cerdas
                   </Link>
-                  <button 
-                  onClick={() => alert("Menampilkan pop-up video demo AgriSmart (coming soon...)")} 
-                  className="flex items-center justify-center gap-2 px-8 py-4 rounded-full font-bold text-lg text-primary hover:bg-primary/5 transition-colors">
+                  <button
+                    onClick={() =>
+                      alert(
+                        "Menampilkan pop-up video demo AgriSmart (coming soon...)",
+                      )
+                    }
+                    className="flex items-center justify-center gap-2 px-8 py-4 rounded-full font-bold text-lg text-primary hover:bg-primary/5 transition-colors"
+                  >
                     <span className="material-symbols-outlined">
                       play_circle
                     </span>
@@ -179,9 +208,9 @@ const LandingPage: React.FC = () => {
                   Pecinta Tanaman
                 </p>
               </div>
-              
+
               <div className="w-24 h-px md:w-px md:h-12 bg-outline-variant/30"></div>
-              
+
               <div className="text-center">
                 <p className="text-3xl md:text-4xl font-headline font-extrabold text-primary">
                   {/* Gunakan data Tanaman dari Firestore */}
@@ -191,9 +220,9 @@ const LandingPage: React.FC = () => {
                   Tanaman Terpantau
                 </p>
               </div>
-              
+
               <div className="w-24 h-px md:w-px md:h-12 bg-outline-variant/30"></div>
-              
+
               <div className="text-center">
                 <p className="text-3xl md:text-4xl font-headline font-extrabold text-primary">
                   99.9%

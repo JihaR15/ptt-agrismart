@@ -19,6 +19,7 @@ export async function signUp(
     fullName: string;
     password: string;
     role?: string;
+    allowedDevices?: string[];
   },
   callback: Function,
 ) {
@@ -38,6 +39,7 @@ export async function signUp(
     try {
       userData.password = await bcrypt.hash(userData.password, 10);
       userData.role = "user";
+      userData.allowedDevices = [];
 
       await addDoc(collection(db, "users"), userData);
 
@@ -57,10 +59,15 @@ export async function signUp(
 export async function signIn(email: string) {
   const q = query(collection(db, "users"), where("email", "==", email));
   const querySnapshot = await getDocs(q);
-  const data = querySnapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...doc.data(),
-  }));
+
+  const data = querySnapshot.docs.map((doc) => {
+    const docData = doc.data();
+    return {
+      id: doc.id,
+      ...docData,
+      allowedDevices: docData.allowedDevices || [], 
+    };
+  });
 
   return data.length > 0 ? data[0] : null;
 }
@@ -71,15 +78,27 @@ export async function signInOAuth(userData: any, callback: Function) {
 
     if (existingUser) {
       userData.role = existingUser.role;
+      userData.allowedDevices = existingUser.allowedDevices || []; 
+      
       await updateDoc(doc(db, "users", existingUser.id), userData);
       callback({
         status: true,
         message: "User successfully logged in",
         data: userData,
       });
+
+      if (existingUser.isDeleted) {
+        callback({
+          status: false,
+          message: "Akun Anda telah dinonaktifkan oleh Admin.",
+        });
+        return; // Hentikan eksekusi kode di bawahnya
+      }
     } else {
-      userData.role = "user";
-      await addDoc(collection(db, "users"), userData);
+      userData.role = existingUser.role;
+      userData.allowedDevices = existingUser.allowedDevices || []; 
+      
+      await updateDoc(doc(db, "users", existingUser.id), userData);
       callback({
         status: true,
         message: "New user registered and logged in",
@@ -94,39 +113,16 @@ export async function signInOAuth(userData: any, callback: Function) {
   }
 }
 
-export async function updateUserProfileByEmail(
-  email: string,
-  payload: { fullName: string; image: string },
-) {
-  const q = query(collection(db, "users"), where("email", "==", email));
-  const querySnapshot = await getDocs(q);
-
-  if (querySnapshot.empty) {
-    return {
-      status: false,
-      message: "Pengguna tidak ditemukan.",
-    };
-  }
-
+export async function saveHistoryLog(logData: any) {
   try {
-    const userDoc = querySnapshot.docs[0];
-    await updateDoc(doc(db, "users", userDoc.id), {
-      fullName: payload.fullName,
-      image: payload.image,
+    await addDoc(collection(db, "history-log2"), {
+      ...logData,
+      timestamp: new Date().toISOString() 
     });
-
-    return {
-      status: true,
-      message: "Profil berhasil diperbarui.",
-      data: {
-        fullName: payload.fullName,
-        image: payload.image,
-      },
-    };
-  } catch (error) {
-    return {
-      status: false,
-      message: "Gagal memperbarui profil.",
-    };
+    
+    return { status: "success" };
+  } catch (error: any) {
+    console.error("Gagal menyimpan history:", error);
+    return { status: "error", message: error.message };
   }
 }

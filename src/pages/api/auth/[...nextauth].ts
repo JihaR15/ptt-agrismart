@@ -26,6 +26,10 @@ export const authOptions: NextAuthOptions = {
                 if (!user) {
                     throw new Error("Email tidak terdaftar");
                 }
+
+                if (user.isDeleted) {
+                    throw new Error("Akun Anda telah dinonaktifkan oleh Admin.");
+                }
             
                 const isPasswordValid = await bcrypt.compare(
                     credentials.password,
@@ -41,7 +45,7 @@ export const authOptions: NextAuthOptions = {
                     email: user.email,
                     fullName: user.fullName,
                     role: user.role,
-                    image: user.image || null,
+                    allowedDevices: user.allowedDevices || [],
                 };
             },
         }),
@@ -53,17 +57,12 @@ export const authOptions: NextAuthOptions = {
 
     callbacks: {
         async jwt({ token, account, user, trigger, session }: any) {
-            if (trigger === "update" && session) {
-                token.fullName = session.fullName || token.fullName;
-                token.image = session.image || token.image;
-            }
-
             if (account?.provider === "credentials" && user) {
                 token.id = user.id;
                 token.email = user.email;
                 token.fullName = user.fullName;
                 token.role = user.role;
-                token.image = user.image || token.image;
+                token.allowedDevices = user.allowedDevices || [];
             }
             if (account?.provider === "google") {
                 const data = {
@@ -72,14 +71,25 @@ export const authOptions: NextAuthOptions = {
                     image: user.image,
                     type: account.provider,
                 };
-                await signInOAuth(data, (result: any) => {
-                    if (result.status) {
-                        token.fullName = result.data.fullName;
-                        token.role = result.data.role;
-                        token.image = result.data.image;
-                    }
+                await new Promise((resolve, reject) => { 
+                    signInOAuth(data, (result: any) => {
+                        if (result.status) {
+                            token.fullName = result.data.fullName;
+                            token.role = result.data.role;
+                            token.allowedDevices = result.data.allowedDevices || [];
+                            resolve(true);
+                        } else {
+                            // --- TAMBAHAN: Lempar error agar login Google digagalkan ---
+                            reject(new Error(result.message));
+                        }
+                    });
                 });
             }
+
+            if (trigger === "update" && session?.user?.allowedDevices) {
+                token.allowedDevices = session.user.allowedDevices;
+            }
+
             return token;
         },
         async session({ session, token }: any) {
@@ -88,7 +98,7 @@ export const authOptions: NextAuthOptions = {
                 session.user.id = token.id;
                 session.user.fullName = token.fullName;
                 session.user.role = token.role;
-                session.user.image = token.image;
+                session.user.allowedDevices = token.allowedDevices || [];
             }
             return session;
         },
