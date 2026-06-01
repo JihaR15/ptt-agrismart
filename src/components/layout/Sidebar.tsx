@@ -48,7 +48,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           className={`px-4 mb-10 flex items-center ${isDesktopCollapsed ? "justify-center" : "justify-between px-8"}`}
         >
           <div className="flex items-center gap-3">
-            <div className="min-w-[40px] h-10 bg-primary rounded-xl flex items-center justify-center text-on-primary shadow-sm shrink-0">
+            <div className="min-w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-on-primary shadow-sm shrink-0">
               <span className="material-symbols-outlined icon-filled">eco</span>
             </div>
             <div
@@ -135,22 +135,32 @@ const Sidebar: React.FC<SidebarProps> = ({
                   </span>
                 )}
               </Link>
+
+              <Link
+                href="/analytics"
+                onClick={onMobileClose}
+                className={`flex items-center gap-3 py-3 font-medium transition-all duration-200 rounded-lg group
+              ${isDesktopCollapsed ? "justify-center px-0" : "px-4"}
+              ${isActive("/analytics") ? "text-primary-container font-bold border-r-4 border-primary bg-emerald-100/50" : "text-on-surface-variant hover:bg-emerald-50"}
+            `}
+                title={isDesktopCollapsed ? "Analitik Cerdas" : ""}
+              >
+                <span
+                  className={`material-symbols-outlined ${isActive("/analytics") ? "text-primary" : "text-outline group-hover:text-primary"}`}
+                >
+                  insights
+                </span>
+                {!isDesktopCollapsed && (
+                  <span className="font-headline whitespace-nowrap">
+                    Analitik Cerdas
+                  </span>
+                )}
+              </Link>
             </>
           )}
 
           {isAdmin && (
             <>
-              {/* <div className="pt-6 pb-2">
-                {!isDesktopCollapsed && (
-                  <p className="text-[10px] font-bold text-primary uppercase tracking-widest px-4 mb-2">
-                    Admin Panel
-                  </p>
-                )}
-                {isDesktopCollapsed && (
-                  <div className="h-px w-full bg-emerald-200/50 my-2"></div>
-                )}
-              </div> */}
-
               <Link
                 href="/admin"
                 onClick={onMobileClose}

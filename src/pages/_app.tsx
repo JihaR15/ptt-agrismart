@@ -19,6 +19,7 @@ export default function App({
     if (path.startsWith("/history")) return "Riwayat Aktivitas";
     if (path.startsWith("/profile/edit")) return "Edit Profil";
     if (path.startsWith("/profile")) return "Profil Saya";
+    if (path.startsWith("/analytics")) return "Analisis Cerdas";
     return "AgriSmart";
   };
 
