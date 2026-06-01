@@ -7,6 +7,7 @@ import {
   where,
   doc,
   updateDoc,
+  setDoc,
 } from "firebase/firestore";
 import { app } from "./firebase";
 import bcrypt from "bcrypt";
@@ -161,5 +162,19 @@ export async function updateUserProfileByEmail(
       status: false,
       message: "Gagal memperbarui profil.",
     };
+  }
+}
+
+export async function saveAnalyticsResult(deviceId: string, analyticsData: any) {
+  try {
+    await setDoc(doc(db, "analytics_results", deviceId), {
+      ...analyticsData,
+      lastUpdated: new Date().toISOString()
+    });
+    
+    return { status: "success" };
+  } catch (error: any) {
+    console.error("Gagal menyimpan hasil analitik:", error);
+    return { status: "error", message: error.message };
   }
 }
