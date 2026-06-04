@@ -9,6 +9,8 @@ import {
   onSnapshot,
   getDocs,
   documentId,
+  doc,
+  updateDoc,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import {
@@ -25,6 +27,7 @@ import {
 interface DeviceDetail {
   id: string;
   name: string;
+  targetMoisture: number;
 }
 
 const Dashboard: React.FC = () => {
@@ -61,6 +64,7 @@ const Dashboard: React.FC = () => {
             const devicesData = devicesSnapshot.docs.map((doc) => ({
               id: doc.id,
               name: doc.data().name || doc.id,
+              targetMoisture: doc.data().targetMoisture !== undefined ? doc.data().targetMoisture : 80,
             }));
 
             setDevices(devicesData);
@@ -91,6 +95,13 @@ const Dashboard: React.FC = () => {
     }
   }, [devices, selectedDevice]);
 
+  useEffect(() => {
+    const activeDevice = devices.find((d) => d.id === selectedDevice);
+    if (activeDevice) {
+      setThreshold(activeDevice.targetMoisture);
+    }
+  }, [selectedDevice, devices]);
+
   const {
     espStatus,
     dhtStatus,
@@ -101,10 +112,47 @@ const Dashboard: React.FC = () => {
     isSensorActive,
     toggleSensorActive,
     updateThreshold,
+    lastMessageTime,
   } = useAgriSmart(selectedDevice);
 
-  const handleThresholdRelease = () => {
+  const handleThresholdRelease = async () => {
     updateThreshold(threshold);
+
+    if (selectedDevice) {
+      try {
+        const deviceRef = doc(db, "devices", selectedDevice);
+        await updateDoc(deviceRef, {
+          targetMoisture: threshold,
+        });
+        
+        setDevices((prevDevices) =>
+          prevDevices.map((device) =>
+            device.id === selectedDevice
+              ? { ...device, targetMoisture: threshold }
+              : device
+          )
+        );
+      } catch (error) {
+        console.error("Gagal menyimpan threshold ke Firebase:", error);
+      }
+    }
+  };
+
+  const formatLastSyncTime = (timestamp: number) => {
+    if (!timestamp) return "Menunggu data...";
+    
+    const now = Date.now();
+    const diffInSeconds = Math.floor((now - timestamp) / 1000);
+    
+    // Jika data baru masuk kurang dari 10 detik yang lalu, tampilkan "Baru saja"
+    if (diffInSeconds < 10) return "Baru saja";
+    
+    // Selebihnya tampilkan jam pastinya (Contoh: 14:30:45)
+    return new Date(timestamp).toLocaleTimeString("id-ID", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
   };
 
   if (
@@ -204,7 +252,7 @@ const Dashboard: React.FC = () => {
 
             <div className="hidden sm:flex items-center gap-2 text-xs text-on-surface-variant font-medium">
               <span className="material-symbols-outlined text-sm">sync</span>
-              <span>Sinkronisasi terakhir: Baru saja</span>
+              <span>Sinkronisasi terakhir: {formatLastSyncTime(lastMessageTime)}</span>
             </div>
           </div>
 

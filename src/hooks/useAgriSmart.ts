@@ -182,5 +182,6 @@ export const useAgriSmart = (deviceId: string) => {
     isSensorActive,
     toggleSensorActive,
     updateThreshold,
+    lastMessageTime,
   };
 };
