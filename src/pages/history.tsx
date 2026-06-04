@@ -397,7 +397,7 @@ const History: React.FC = () => {
               Log Aktivitas Sensor
             </h2>
             <p className="text-neutral-600 mt-2 font-body">
-              Pemantauan real-time dan histori kondisi perangkat aktif Anda.
+              Monitoring perangkat aktif secara berkala dengan pembaruan tiap 10 menit berupa rata-rata.
             </p>
           </div>
 
