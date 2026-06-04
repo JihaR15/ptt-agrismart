@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import AddDeviceModal from "../components/AddDeviceModal";
-import { useAgriSmart } from "../hooks/useAgriSmart";
+import { useAgriSmartGlobal } from "../context/AgriSmartContext";
 import {
   collection,
   query,
@@ -40,6 +40,22 @@ const Dashboard: React.FC = () => {
   const [devices, setDevices] = useState<DeviceDetail[]>([]);
   const [isDevicesLoading, setIsDevicesLoading] = useState(true);
 
+  // 1. Ambil data dan fungsi kontrol dari Global Context
+  const {
+    setDeviceId,
+    espStatus,
+    dhtStatus,
+    sensorData,
+    chartData,
+    isWatering,
+    handleWatering,
+    isSensorActive,
+    toggleSensorActive,
+    updateThreshold,
+    lastMessageTime,
+  } = useAgriSmartGlobal();
+
+  // Ambil daftar perangkat dari Firebase Firestore berdasarkan email user
   useEffect(() => {
     if (!session?.user?.email) return;
 
@@ -84,6 +100,7 @@ const Dashboard: React.FC = () => {
     return () => unsubscribe();
   }, [session?.user?.email]);
 
+  // Set default perangkat pertama jika belum ada yang dipilih
   useEffect(() => {
     if (
       devices.length > 0 &&
@@ -95,25 +112,20 @@ const Dashboard: React.FC = () => {
     }
   }, [devices, selectedDevice]);
 
+  // 2. Sinkronisasikan perangkat yang dipilih di UI ke Global Context MQTT
+  useEffect(() => {
+    if (selectedDevice) {
+      setDeviceId(selectedDevice);
+    }
+  }, [selectedDevice, setDeviceId]);
+
+  // Set nilai threshold awal sesuai dengan data perangkat dari Firebase
   useEffect(() => {
     const activeDevice = devices.find((d) => d.id === selectedDevice);
     if (activeDevice) {
       setThreshold(activeDevice.targetMoisture);
     }
   }, [selectedDevice, devices]);
-
-  const {
-    espStatus,
-    dhtStatus,
-    sensorData,
-    chartData,
-    isWatering,
-    handleWatering,
-    isSensorActive,
-    toggleSensorActive,
-    updateThreshold,
-    lastMessageTime,
-  } = useAgriSmart(selectedDevice);
 
   const handleThresholdRelease = async () => {
     updateThreshold(threshold);
@@ -144,10 +156,8 @@ const Dashboard: React.FC = () => {
     const now = Date.now();
     const diffInSeconds = Math.floor((now - timestamp) / 1000);
     
-    // Jika data baru masuk kurang dari 10 detik yang lalu, tampilkan "Baru saja"
     if (diffInSeconds < 10) return "Baru saja";
     
-    // Selebihnya tampilkan jam pastinya (Contoh: 14:30:45)
     return new Date(timestamp).toLocaleTimeString("id-ID", {
       hour: "2-digit",
       minute: "2-digit",
@@ -187,8 +197,7 @@ const Dashboard: React.FC = () => {
               Belum Ada Pot Pintar
             </h3>
             <p className="font-body text-on-surface-variant mb-10 leading-relaxed px-4">
-              Mulai pantau tanaman Anda dengan menambahkan perangkat AgriSmart
-              pertama Anda.
+              Mulai pantau tanaman Anda dengan menambahkan perangkat AgriSmart pertama Anda.
             </p>
 
             <button
@@ -212,7 +221,7 @@ const Dashboard: React.FC = () => {
                 >
                   {devices.map((device) => (
                     <option key={device.id} value={device.id}>
-                      {device.name} {/* Menampilkan Nama Perangkat di UI */}
+                      {device.name}
                     </option>
                   ))}
                 </select>
@@ -403,8 +412,8 @@ const Dashboard: React.FC = () => {
                     type="range"
                     value={threshold}
                     onChange={(e) => setThreshold(Number(e.target.value))}
-                    onMouseUp={handleThresholdRelease} // Kirim saat mouse dilepas
-                    onTouchEnd={handleThresholdRelease} // Kirim saat layar sentuh dilepas
+                    onMouseUp={handleThresholdRelease}
+                    onTouchEnd={handleThresholdRelease}
                     disabled={espStatus !== "Terhubung"}
                   />
                 </div>
@@ -417,8 +426,7 @@ const Dashboard: React.FC = () => {
 
               <div className="flex flex-col gap-4">
                 <p className="text-sm text-on-surface-variant">
-                  Aktifkan penyiraman secara manual tanpa menunggu jadwal
-                  otomatis.
+                  Aktifkan penyiraman secara manual tanpa menunggu jadwal otomatis.
                 </p>
                 <button
                   onClick={handleWatering}
@@ -440,6 +448,7 @@ const Dashboard: React.FC = () => {
             </div>
           </div>
 
+          {/* GRAFIK TREN */}
           <div className="bg-surface-container-lowest rounded-xl p-8 border border-emerald-50 shadow-sm">
             <div className="flex items-center justify-between mb-8">
               <div>

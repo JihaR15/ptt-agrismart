@@ -2,6 +2,7 @@ import { SessionProvider } from "next-auth/react";
 import type { AppProps } from "next/app";
 import { useRouter } from "next/router";
 import DashboardLayout from "../components/layout/DashboardLayout";
+import { AgriSmartProvider } from "../context/AgriSmartContext"; // 1. Import Provider
 import "@/styles/globals.css";
 
 export default function App({
@@ -25,13 +26,15 @@ export default function App({
 
   return (
     <SessionProvider session={session}>
-      {isAuthPage ? (
-        <Component {...pageProps} />
-      ) : (
-        <DashboardLayout pageTitle={getPageTitle(router.pathname)}>
+      <AgriSmartProvider>
+        {isAuthPage ? (
           <Component {...pageProps} />
-        </DashboardLayout>
-      )}
+        ) : (
+          <DashboardLayout pageTitle={getPageTitle(router.pathname)}>
+            <Component {...pageProps} />
+          </DashboardLayout>
+        )}
+      </AgriSmartProvider>
     </SessionProvider>
   );
 }
