@@ -79,6 +79,7 @@ const TopNavbar: React.FC<TopNavbarProps> = ({
                 }
                 width={32}
                 height={32}
+                unoptimized
                 referrerPolicy="no-referrer"
               />
               <div className="text-left">
