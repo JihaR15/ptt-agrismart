@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import mqtt from "mqtt";
 
 interface SensorData {
@@ -14,16 +14,29 @@ interface ChartDataPoint {
   kelembapan: number;
 }
 
-export const useAgriSmart = (deviceId: string) => {
-  const [espStatus, setEspStatus] = useState<"Terhubung" | "Terputus">(
-    "Terputus",
-  );
-  const [dhtStatus, setDhtStatus] = useState<"Terhubung" | "Terputus">(
-    "Terputus",
-  );
+interface AgriSmartContextType {
+  deviceId: string;
+  setDeviceId: (id: string) => void;
+  espStatus: "Terhubung" | "Terputus";
+  dhtStatus: "Terhubung" | "Terputus";
+  sensorData: SensorData;
+  chartData: ChartDataPoint[];
+  isWatering: boolean;
+  handleWatering: () => void;
+  isSensorActive: boolean;
+  toggleSensorActive: () => void;
+  updateThreshold: (newThreshold: number) => void;
+  lastMessageTime: number;
+}
+
+const AgriSmartContext = createContext<AgriSmartContextType | undefined>(undefined);
+
+export const AgriSmartProvider = ({ children }: { children: ReactNode }) => {
+  const [deviceId, setDeviceId] = useState<string>("");
+  const [espStatus, setEspStatus] = useState<"Terhubung" | "Terputus">("Terputus");
+  const [dhtStatus, setDhtStatus] = useState<"Terhubung" | "Terputus">("Terputus");
   const [isWatering, setIsWatering] = useState<boolean>(false);
   const [isSensorActive, setIsSensorActive] = useState<boolean>(true);
-
   const [lastMessageTime, setLastMessageTime] = useState<number>(0);
 
   const [sensorData, setSensorData] = useState<SensorData>({
@@ -36,17 +49,28 @@ export const useAgriSmart = (deviceId: string) => {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [client, setClient] = useState<mqtt.MqttClient | null>(null);
 
+  // Ambil data dari localStorage saat deviceId berubah agar data langsung muncul tanpa delay
   useEffect(() => {
-    if (typeof window !== 'undefined' && deviceId) {
-      const savedCache = localStorage.getItem(`agrismart_chart_${deviceId}`);
-      if (savedCache) {
-        setChartData(JSON.parse(savedCache));
+    if (typeof window !== "undefined" && deviceId) {
+      // Muat cache data grafik
+      const savedChartCache = localStorage.getItem(`agrismart_chart_${deviceId}`);
+      if (savedChartCache) {
+        setChartData(JSON.parse(savedChartCache));
       } else {
         setChartData([]);
+      }
+
+      // Muat cache data sensor real-time terakhir
+      const savedSensorCache = localStorage.getItem(`agrismart_sensor_${deviceId}`);
+      if (savedSensorCache) {
+        setSensorData(JSON.parse(savedSensorCache));
+      } else {
+        setSensorData({ temperature: 0, humidity: 0, soilMoisture: 0, waterLevel: 0 });
       }
     }
   }, [deviceId]);
 
+  // Logika Koneksi MQTT yang berjalan di background level aplikasi
   useEffect(() => {
     if (!deviceId) return;
 
@@ -59,15 +83,13 @@ export const useAgriSmart = (deviceId: string) => {
     setClient(mqttClient);
 
     mqttClient.on("connect", () => {
-      console.log("✅ Berhasil terhubung ke MQTT Broker");
-      // setEspStatus("Terhubung");
-
+      console.log(`✅ Berhasil terhubung ke MQTT Broker untuk Perangkat: ${deviceId}`);
       mqttClient.subscribe(`agrismart/${deviceId}/sensor`);
       mqttClient.subscribe(`agrismart/${deviceId}/status`);
     });
 
     mqttClient.on("message", (topic, message) => {
-      console.log("DATA MASUK:", topic, message.toString());
+      console.log("DATA MASUK (GLOBAL):", topic, message.toString());
       setLastMessageTime(Date.now());
 
       try {
@@ -76,12 +98,16 @@ export const useAgriSmart = (deviceId: string) => {
         if (topic === `agrismart/${deviceId}/sensor`) {
           setDhtStatus("Terhubung");
 
-          setSensorData({
+          const updatedSensor = {
             temperature: payload.temperature || 0,
             humidity: payload.humidity || 0,
             soilMoisture: payload.moisture || 0,
             waterLevel: payload.waterLevel || 0,
-          });
+          };
+
+          setSensorData(updatedSensor);
+          // Simpan data sensor terakhir ke localStorage
+          localStorage.setItem(`agrismart_sensor_${deviceId}`, JSON.stringify(updatedSensor));
 
           setChartData((prev) => {
             const timeString = new Date().toLocaleTimeString([], {
@@ -95,10 +121,12 @@ export const useAgriSmart = (deviceId: string) => {
             };
 
             const updatedChart = [...prev, newDataPoint];
-            localStorage.setItem(`agrismart_chart_${deviceId}`, JSON.stringify(updatedChart));
-            return updatedChart.length > 15
-              ? updatedChart.slice(updatedChart.length - 15)
+            const standardChart = updatedChart.length > 15 
+              ? updatedChart.slice(updatedChart.length - 15) 
               : updatedChart;
+
+            localStorage.setItem(`agrismart_chart_${deviceId}`, JSON.stringify(standardChart));
+            return standardChart;
           });
         }
 
@@ -118,10 +146,12 @@ export const useAgriSmart = (deviceId: string) => {
     });
 
     return () => {
+      console.log(`🔌 Memutus koneksi MQTT lama untuk perangkat: ${deviceId}`);
       mqttClient.end();
     };
   }, [deviceId]);
 
+  // Interval pengecekan heartbeat status ESP32 (setiap 3 detik)
   useEffect(() => {
     const interval = setInterval(() => {
       if (!lastMessageTime) return;
@@ -139,18 +169,20 @@ export const useAgriSmart = (deviceId: string) => {
     return () => clearInterval(interval);
   }, [lastMessageTime]);
 
+  // Fungsi Kontrol Perangkat (Manual Watering)
   const handleWatering = useCallback(() => {
     if (!client || espStatus !== "Terhubung") return;
 
     setIsWatering(true);
     client.publish(
       `agrismart/${deviceId}/action`,
-      JSON.stringify({ command: "WATER" }),
+      JSON.stringify({ command: "WATER" })
     );
 
     setTimeout(() => setIsWatering(false), 5000);
   }, [client, espStatus, deviceId]);
 
+  // Fungsi Kontrol Status Sensor (Pause/Resume Monitoring)
   const toggleSensorActive = useCallback(() => {
     if (!client || espStatus !== "Terhubung") return;
 
@@ -158,10 +190,11 @@ export const useAgriSmart = (deviceId: string) => {
     setIsSensorActive(newState);
     client.publish(
       `agrismart/${deviceId}/action`,
-      JSON.stringify({ command: newState ? "RESUME" : "PAUSE" }),
+      JSON.stringify({ command: newState ? "RESUME" : "PAUSE" })
     );
   }, [client, espStatus, isSensorActive, deviceId]);
 
+  // Fungsi Pengiriman Ambang Batas Baru ke ESP32
   const updateThreshold = useCallback((newThreshold: number) => {
     if (!client || espStatus !== "Terhubung") return;
 
@@ -172,16 +205,32 @@ export const useAgriSmart = (deviceId: string) => {
     console.log(`🎛️ Threshold dikirim ke ESP32: ${newThreshold}%`);
   }, [client, espStatus, deviceId]);
 
-  return {
-    espStatus,
-    dhtStatus,
-    sensorData,
-    chartData,
-    isWatering,
-    handleWatering,
-    isSensorActive,
-    toggleSensorActive,
-    updateThreshold,
-    lastMessageTime,
-  };
+  return (
+    <AgriSmartContext.Provider
+      value={{
+        deviceId,
+        setDeviceId,
+        espStatus,
+        dhtStatus,
+        sensorData,
+        chartData,
+        isWatering,
+        handleWatering,
+        isSensorActive,
+        toggleSensorActive,
+        updateThreshold,
+        lastMessageTime,
+      }}
+    >
+      {children}
+    </AgriSmartContext.Provider>
+  );
+};
+
+export const useAgriSmartGlobal = () => {
+  const context = useContext(AgriSmartContext);
+  if (context === undefined) {
+    throw new Error("useAgriSmartGlobal harus digunakan di dalam AgriSmartProvider");
+  }
+  return context;
 };

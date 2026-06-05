@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import AddDeviceModal from "../components/AddDeviceModal";
-import { useAgriSmart } from "../hooks/useAgriSmart";
+import { useAgriSmartGlobal } from "../context/AgriSmartContext";
 import {
   collection,
   query,
@@ -9,6 +9,8 @@ import {
   onSnapshot,
   getDocs,
   documentId,
+  doc,
+  updateDoc,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import {
@@ -25,6 +27,7 @@ import {
 interface DeviceDetail {
   id: string;
   name: string;
+  targetMoisture: number;
 }
 
 const Dashboard: React.FC = () => {
@@ -37,6 +40,22 @@ const Dashboard: React.FC = () => {
   const [devices, setDevices] = useState<DeviceDetail[]>([]);
   const [isDevicesLoading, setIsDevicesLoading] = useState(true);
 
+  // 1. Ambil data dan fungsi kontrol dari Global Context
+  const {
+    setDeviceId,
+    espStatus,
+    dhtStatus,
+    sensorData,
+    chartData,
+    isWatering,
+    handleWatering,
+    isSensorActive,
+    toggleSensorActive,
+    updateThreshold,
+    lastMessageTime,
+  } = useAgriSmartGlobal();
+
+  // Ambil daftar perangkat dari Firebase Firestore berdasarkan email user
   useEffect(() => {
     if (!session?.user?.email) return;
 
@@ -61,6 +80,7 @@ const Dashboard: React.FC = () => {
             const devicesData = devicesSnapshot.docs.map((doc) => ({
               id: doc.id,
               name: doc.data().name || doc.id,
+              targetMoisture: doc.data().targetMoisture !== undefined ? doc.data().targetMoisture : 80,
             }));
 
             setDevices(devicesData);
@@ -80,6 +100,7 @@ const Dashboard: React.FC = () => {
     return () => unsubscribe();
   }, [session?.user?.email]);
 
+  // Set default perangkat pertama jika belum ada yang dipilih
   useEffect(() => {
     if (
       devices.length > 0 &&
@@ -91,21 +112,60 @@ const Dashboard: React.FC = () => {
     }
   }, [devices, selectedDevice]);
 
-  const {
-    espStatus,
-    dhtStatus,
-    sensorData,
-    chartData,
-    isWatering,
-    handleWatering,
-    isSensorActive,
-    toggleSensorActive,
-    updateThreshold,
-  } = useAgriSmart(selectedDevice);
+  // 2. Sinkronisasikan perangkat yang dipilih di UI ke Global Context MQTT
+  useEffect(() => {
+    if (selectedDevice) {
+      setDeviceId(selectedDevice);
+    }
+  }, [selectedDevice, setDeviceId]);
 
-  const handleThresholdRelease = () => {
+  // Set nilai threshold awal sesuai dengan data perangkat dari Firebase
+  useEffect(() => {
+    const activeDevice = devices.find((d) => d.id === selectedDevice);
+    if (activeDevice) {
+      setThreshold(activeDevice.targetMoisture);
+    }
+  }, [selectedDevice, devices]);
+
+  const handleThresholdRelease = async () => {
     updateThreshold(threshold);
+
+    if (selectedDevice) {
+      try {
+        const deviceRef = doc(db, "devices", selectedDevice);
+        await updateDoc(deviceRef, {
+          targetMoisture: threshold,
+        });
+        
+        setDevices((prevDevices) =>
+          prevDevices.map((device) =>
+            device.id === selectedDevice
+              ? { ...device, targetMoisture: threshold }
+              : device
+          )
+        );
+      } catch (error) {
+        console.error("Gagal menyimpan threshold ke Firebase:", error);
+      }
+    }
   };
+
+  const formatLastSyncTime = (timestamp: number) => {
+    if (!timestamp) return "Menunggu data...";
+    
+    const now = Date.now();
+    const diffInSeconds = Math.floor((now - timestamp) / 1000);
+    
+    if (diffInSeconds < 10) return "Baru saja";
+    
+    return new Date(timestamp).toLocaleTimeString("id-ID", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  };
+
+    const isDisconnected = espStatus === "Terputus" || dhtStatus === "Terputus";
 
   if (
     status === "loading" ||
@@ -139,8 +199,7 @@ const Dashboard: React.FC = () => {
               Belum Ada Pot Pintar
             </h3>
             <p className="font-body text-on-surface-variant mb-10 leading-relaxed px-4">
-              Mulai pantau tanaman Anda dengan menambahkan perangkat AgriSmart
-              pertama Anda.
+              Mulai pantau tanaman Anda dengan menambahkan perangkat AgriSmart pertama Anda.
             </p>
 
             <button
@@ -164,7 +223,7 @@ const Dashboard: React.FC = () => {
                 >
                   {devices.map((device) => (
                     <option key={device.id} value={device.id}>
-                      {device.name} {/* Menampilkan Nama Perangkat di UI */}
+                      {device.name}
                     </option>
                   ))}
                 </select>
@@ -186,85 +245,83 @@ const Dashboard: React.FC = () => {
                 </span>
               </div>
 
-              <button
-                onClick={toggleSensorActive}
-                disabled={espStatus !== "Terhubung"}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold transition-all border ${
-                  isSensorActive
-                    ? "bg-surface-container-lowest text-on-surface-variant border-emerald-100 hover:bg-surface-container-low"
-                    : "bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
-                } ${espStatus !== "Terhubung" ? "opacity-50 cursor-not-allowed" : ""}`}
-              >
-                <span className="material-symbols-outlined text-[16px]">
-                  {isSensorActive ? "pause" : "play_arrow"}
-                </span>
-                {isSensorActive ? "Jeda Sensor" : "Lanjut Pantau"}
-              </button>
             </div>
 
             <div className="hidden sm:flex items-center gap-2 text-xs text-on-surface-variant font-medium">
               <span className="material-symbols-outlined text-sm">sync</span>
-              <span>Sinkronisasi terakhir: Baru saja</span>
+              <span>Sinkronisasi terakhir: {formatLastSyncTime(lastMessageTime)}</span>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div className="bg-surface-container-lowest p-6 rounded-xl relative overflow-hidden flex flex-col justify-between h-48 border border-emerald-50 shadow-sm transition-transform duration-300 hover:-translate-y-1">
-              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-[40%] bg-primary rounded-r-md"></div>
+            
+            {/* --- KARTU 1: KELEMBAPAN TANAH --- */}
+            <div 
+              className={`p-6 rounded-xl relative overflow-hidden flex flex-col justify-between h-48 border shadow-sm transition-transform duration-300 hover:-translate-y-1 ${
+                isDisconnected ? "bg-gray-50/60 border-gray-200 opacity-75 grayscale-[30%]" : "bg-surface-container-lowest border-emerald-50"
+              }`}
+            >
+              <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 h-[40%] rounded-r-md ${isDisconnected ? "bg-gray-400" : "bg-primary"}`}></div>
               <div className="flex justify-between items-start">
-                <span className="text-sm font-semibold text-on-surface-variant">
+                <span className={`text-sm font-semibold ${isDisconnected ? "text-gray-500" : "text-on-surface-variant"}`}>
                   Kelembapan Tanah
                 </span>
-                <span className="material-symbols-outlined text-primary">
+                <span className={`material-symbols-outlined ${isDisconnected ? "text-gray-400" : "text-primary"}`}>
                   water_drop
                 </span>
               </div>
               <div>
-                <h3 className="text-5xl font-headline font-extrabold text-on-surface">
+                <h3 className={`text-5xl font-headline font-extrabold ${isDisconnected ? "text-gray-500" : "text-on-surface"}`}>
                   {sensorData.soilMoisture ?? "--"}
-                  <span className="text-2xl text-on-surface-variant">%</span>
+                  <span className={`text-2xl ${isDisconnected ? "text-gray-400" : "text-on-surface-variant"}`}>%</span>
                 </h3>
-                <p className="text-sm font-body text-primary mt-2 flex items-center gap-1 font-medium">
-                  {sensorData.soilMoisture ? "Real-time" : "Menunggu data..."}
+                <p className={`text-sm font-body mt-2 flex items-center gap-1 font-medium ${isDisconnected ? "text-gray-500" : "text-primary"}`}>
+                  {isDisconnected ? "Terputus" : (sensorData.soilMoisture ? "Real-time" : "Menunggu data...")}
                 </p>
               </div>
             </div>
 
-            <div className="bg-surface-container-lowest p-6 rounded-xl relative overflow-hidden flex flex-col justify-between h-48 border border-emerald-50 shadow-sm transition-transform duration-300 hover:-translate-y-1">
-              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-[40%] bg-tertiary rounded-r-md"></div>
+            {/* --- KARTU 2: SUHU LINGKUNGAN --- */}
+            <div 
+              className={`p-6 rounded-xl relative overflow-hidden flex flex-col justify-between h-48 border shadow-sm transition-transform duration-300 hover:-translate-y-1 ${
+                isDisconnected ? "bg-gray-50/60 border-gray-200 opacity-75 grayscale-[30%]" : "bg-surface-container-lowest border-emerald-50"
+              }`}
+            >
+              <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 h-[40%] rounded-r-md ${isDisconnected ? "bg-gray-400" : "bg-tertiary"}`}></div>
               <div className="flex justify-between items-start">
-                <span className="text-sm font-semibold text-on-surface-variant">
+                <span className={`text-sm font-semibold ${isDisconnected ? "text-gray-500" : "text-on-surface-variant"}`}>
                   Suhu Lingkungan
                 </span>
-                <span className="material-symbols-outlined text-tertiary">
+                <span className={`material-symbols-outlined ${isDisconnected ? "text-gray-400" : "text-tertiary"}`}>
                   thermostat
                 </span>
               </div>
               <div>
-                <h3 className="text-5xl font-headline font-extrabold text-on-surface">
-                  {sensorData.temperature > 0
-                    ? sensorData.temperature.toFixed(1)
-                    : "--"}
-                  <span className="text-2xl text-on-surface-variant">°C</span>
+                <h3 className={`text-5xl font-headline font-extrabold ${isDisconnected ? "text-gray-500" : "text-on-surface"}`}>
+                  {sensorData.temperature > 0 ? sensorData.temperature.toFixed(1) : "--"}
+                  <span className={`text-2xl ${isDisconnected ? "text-gray-400" : "text-on-surface-variant"}`}>°C</span>
                 </h3>
-                <p className="text-sm font-body text-on-surface-variant mt-2 flex items-center gap-1 font-medium">
-                  {dhtStatus === "Terhubung"
-                    ? "Stabil (Real-time)"
-                    : "Sensor Terputus"}
+                <p className={`text-sm font-body mt-2 flex items-center gap-1 font-medium ${isDisconnected ? "text-gray-500" : "text-on-surface-variant"}`}>
+                  {isDisconnected ? "Terputus" : (dhtStatus === "Terhubung" ? "Stabil (Real-time)" : "Sensor Terputus")}
                 </p>
               </div>
             </div>
 
+            {/* --- KARTU 3: LEVEL TANGKI AIR --- */}
             <div
               className={`p-6 rounded-xl relative overflow-hidden flex flex-col justify-between h-48 border shadow-sm transition-transform duration-300 hover:-translate-y-1 ${
-                sensorData.waterLevel <= 10
+                isDisconnected
+                  ? "bg-gray-50/60 border-gray-200 opacity-75 grayscale-[30%]"
+                  : sensorData.waterLevel <= 10
                   ? "bg-red-50 border-red-200"
                   : "bg-surface-container-lowest border-emerald-50"
               }`}
             >
               <div
                 className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 h-[40%] rounded-r-md ${
-                  sensorData.waterLevel <= 10
+                  isDisconnected
+                    ? "bg-gray-400"
+                    : sensorData.waterLevel <= 10
                     ? "bg-red-500"
                     : "bg-primary-container"
                 }`}
@@ -273,7 +330,9 @@ const Dashboard: React.FC = () => {
               <div className="flex justify-between items-start">
                 <span
                   className={`text-sm font-semibold ${
-                    sensorData.waterLevel <= 10
+                    isDisconnected
+                      ? "text-gray-500"
+                      : sensorData.waterLevel <= 10
                       ? "text-red-700"
                       : "text-on-surface-variant"
                   }`}
@@ -282,19 +341,23 @@ const Dashboard: React.FC = () => {
                 </span>
                 <span
                   className={`material-symbols-outlined ${
-                    sensorData.waterLevel <= 10
+                    isDisconnected
+                      ? "text-gray-400"
+                      : sensorData.waterLevel <= 10
                       ? "text-red-500 animate-pulse"
                       : "text-primary-container"
                   }`}
                 >
-                  {sensorData.waterLevel <= 10 ? "warning" : "layers"}
+                  {sensorData.waterLevel <= 10 && !isDisconnected ? "warning" : "layers"}
                 </span>
               </div>
 
               <div>
                 <h3
                   className={`text-5xl font-headline font-extrabold ${
-                    sensorData.waterLevel <= 10
+                    isDisconnected
+                      ? "text-gray-500"
+                      : sensorData.waterLevel <= 10
                       ? "text-red-600"
                       : "text-on-surface"
                   }`}
@@ -302,7 +365,9 @@ const Dashboard: React.FC = () => {
                   {sensorData.waterLevel}
                   <span
                     className={`text-2xl ${
-                      sensorData.waterLevel <= 10
+                      isDisconnected
+                        ? "text-gray-400"
+                        : sensorData.waterLevel <= 10
                         ? "text-red-400"
                         : "text-on-surface-variant"
                     }`}
@@ -311,7 +376,11 @@ const Dashboard: React.FC = () => {
                   </span>
                 </h3>
 
-                {sensorData.waterLevel <= 10 ? (
+                {isDisconnected ? (
+                  <p className="text-sm font-body text-gray-500 mt-2 flex items-center gap-1 font-medium">
+                    Terputus
+                  </p>
+                ) : sensorData.waterLevel <= 10 ? (
                   <p className="text-xs font-bold text-red-500 mt-2 flex items-center gap-1 animate-pulse">
                     Tandon Kosong! Pompa Dimatikan.
                   </p>
@@ -325,6 +394,7 @@ const Dashboard: React.FC = () => {
                 )}
               </div>
             </div>
+
           </div>
 
           {/* KONTROL PERANGKAT */}
@@ -355,8 +425,8 @@ const Dashboard: React.FC = () => {
                     type="range"
                     value={threshold}
                     onChange={(e) => setThreshold(Number(e.target.value))}
-                    onMouseUp={handleThresholdRelease} // Kirim saat mouse dilepas
-                    onTouchEnd={handleThresholdRelease} // Kirim saat layar sentuh dilepas
+                    onMouseUp={handleThresholdRelease}
+                    onTouchEnd={handleThresholdRelease}
                     disabled={espStatus !== "Terhubung"}
                   />
                 </div>
@@ -369,8 +439,7 @@ const Dashboard: React.FC = () => {
 
               <div className="flex flex-col gap-4">
                 <p className="text-sm text-on-surface-variant">
-                  Aktifkan penyiraman secara manual tanpa menunggu jadwal
-                  otomatis.
+                  Aktifkan penyiraman secara manual tanpa menunggu jadwal otomatis.
                 </p>
                 <button
                   onClick={handleWatering}
@@ -392,6 +461,7 @@ const Dashboard: React.FC = () => {
             </div>
           </div>
 
+          {/* GRAFIK TREN */}
           <div className="bg-surface-container-lowest rounded-xl p-8 border border-emerald-50 shadow-sm">
             <div className="flex items-center justify-between mb-8">
               <div>

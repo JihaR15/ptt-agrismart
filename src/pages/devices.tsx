@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import DashboardLayout from "../components/layout/DashboardLayout";
 import { useSession } from "next-auth/react";
-import { db } from "../lib/firebase"; // Sesuaikan path-nya
+import { db } from "../lib/firebase";
 import {
   collection,
   query,
@@ -15,7 +15,7 @@ import {
 import AddDeviceModal from "../components/AddDeviceModal";
 import EditDeviceModal from "../components/EditDeviceModal";
 
-import { useAgriSmart } from "../hooks/useAgriSmart";
+import { useAgriSmartGlobal } from "../context/AgriSmartContext";
 
 interface Device {
   id: string;
@@ -38,7 +38,10 @@ const DeviceRow = ({
   onEdit: (device: any) => void;
   onStatusChange: (id: string, isOffline: boolean) => void;
 }) => {
-  const { espStatus } = useAgriSmart(device.id);
+  const globalContext = useAgriSmartGlobal();
+  
+  const isCurrentActive = globalContext.deviceId === device.id;
+  const espStatus = isCurrentActive ? globalContext.espStatus : "Terputus";
 
   useEffect(() => {
     onStatusChange(device.id, espStatus === "Terputus");
@@ -125,14 +128,30 @@ const Devices: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [deviceToEdit, setDeviceToEdit] = useState<any | null>(null);
-  const [offlineStatus, setOfflineStatus] = useState<Record<string, boolean>>(
-    {},
-  );
+  const [offlineStatus, setOfflineStatus] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const cachedDevices = localStorage.getItem("agrismart_devices_cache");
+      const cachedStatus = localStorage.getItem("agrismart_offline_status_cache");
+      
+      if (cachedDevices) {
+        setDevices(JSON.parse(cachedDevices));
+        setIsLoading(false);
+      }
+      if (cachedStatus) {
+        setOfflineStatus(JSON.parse(cachedStatus));
+      }
+    }
+  }, []);
 
   const fetchDevices = async () => {
     if (!session?.user?.email) return;
 
-    setIsLoading(true);
+    if (devices.length === 0) {
+      setIsLoading(true);
+    }
+    
     try {
       const q = query(
         collection(db, "devices"),
@@ -153,6 +172,7 @@ const Devices: React.FC = () => {
       });
 
       setDevices(fetchedDevices);
+      localStorage.setItem("agrismart_devices_cache", JSON.stringify(fetchedDevices));
     } catch (error) {
       console.error("Gagal mengambil data perangkat:", error);
     } finally {
@@ -160,12 +180,10 @@ const Devices: React.FC = () => {
     }
   };
 
-  // Panggil fetch saat komponen dimuat atau session berubah
   useEffect(() => {
     fetchDevices();
   }, [session]);
 
-  // 2. FUNGSI HAPUS DATA (BATCH WRITE UNTUK 3 KOLEKSI)
   const handleDelete = async (deviceId: string) => {
     const confirmDelete = window.confirm(
       `Apakah Anda yakin ingin menghapus perangkat ${deviceId}?`,
@@ -173,19 +191,14 @@ const Devices: React.FC = () => {
     if (!confirmDelete || !session?.user?.email) return;
 
     try {
-      // Siapkan transaksi Batch agar jika 1 gagal, semua dibatalkan (konsisten)
       const batch = writeBatch(db);
 
-      // A. Hapus dari koleksi 'devices'
       const deviceRef = doc(db, "devices", deviceId);
       batch.delete(deviceRef);
 
-      // B. Ubah status jadi 'true' di 'master_devices' agar bisa dipakai lagi
       const masterRef = doc(db, "master_devices", deviceId);
       batch.update(masterRef, { status: true });
 
-      // C. Hapus ID dari array 'allowedDevices' di koleksi 'users'
-      // Cari dulu ID dokumen user-nya berdasarkan email
       const userQuery = query(
         collection(db, "users"),
         where("email", "==", session.user.email),
@@ -199,11 +212,9 @@ const Devices: React.FC = () => {
         });
       }
 
-      // Eksekusi semua perintah di atas secara bersamaan
       await batch.commit();
       alert("Perangkat berhasil dihapus dari akun Anda!");
 
-      // Refresh UI tabel
       fetchDevices();
     } catch (error) {
       console.error("Gagal menghapus perangkat:", error);
@@ -213,13 +224,13 @@ const Devices: React.FC = () => {
 
   const handleStatusChange = useCallback((id: string, isOffline: boolean) => {
     setOfflineStatus((prev) => {
-      // Hanya update state jika statusnya benar-benar berubah
       if (prev[id] === isOffline) return prev;
-      return { ...prev, [id]: isOffline };
+      const newStatus = { ...prev, [id]: isOffline };
+      localStorage.setItem("agrismart_offline_status_cache", JSON.stringify(newStatus));
+      return newStatus;
     });
   }, []);
 
-  // Hitung berapa total yang true (Offline)
   const totalOffline = Object.values(offlineStatus).filter(Boolean).length;
 
   const totalMoisture = devices.reduce((sum, dev) => sum + (dev.targetMoisture || 0), 0);
@@ -227,7 +238,6 @@ const Devices: React.FC = () => {
 
   return (
     <>
-      {/* Page Header & Action */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
         <div>
           <h3 className="text-3xl font-headline font-extrabold text-emerald-900 tracking-tight">
@@ -247,9 +257,6 @@ const Devices: React.FC = () => {
         </button>
       </div>
 
-      {/* --- RENDER KONDISIONAL --- */}
-
-      {/* 1. STATE LOADING */}
       {isLoading ? (
         <div className="flex flex-col items-center justify-center py-20">
           <span className="material-symbols-outlined animate-spin text-primary text-5xl mb-4">
@@ -259,8 +266,7 @@ const Devices: React.FC = () => {
             Memuat data perangkat...
           </p>
         </div>
-      ) : /* 2. EMPTY STATE (TIDAK ADA PERANGKAT) */
-      devices.length === 0 ? (
+      ) : devices.length === 0 ? (
         <div className="bg-surface-container-lowest rounded-3xl border border-emerald-100 p-12 flex flex-col items-center justify-center text-center shadow-sm">
           <div className="w-24 h-24 bg-emerald-50 rounded-full flex items-center justify-center text-primary mb-6">
             <span className="material-symbols-outlined text-[4rem]">
@@ -283,9 +289,7 @@ const Devices: React.FC = () => {
           </button>
         </div>
       ) : (
-        /* 3. MAIN STATE (ADA PERANGKAT) */
         <>
-          {/* Bento Stats Grid (Disesuaikan dengan total device nyata) */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
             <div className="bg-surface-container-lowest p-6 rounded-xl shadow-xl shadow-emerald-900/5 flex items-center gap-4 border border-white/50">
               <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-700">
@@ -330,7 +334,6 @@ const Devices: React.FC = () => {
             </div>
           </div>
 
-          {/* Main Table Card */}
           <div className="bg-surface-container-lowest rounded-xl shadow-2xl shadow-emerald-900/5 overflow-hidden border border-emerald-50">
             <div className="px-8 py-6 border-b border-surface-container-low flex justify-between items-center bg-emerald-50/20">
               <h4 className="font-headline font-bold text-emerald-900">
@@ -360,7 +363,6 @@ const Devices: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-surface-container-low">
-                  {/* GANTI .map YANG LAMA DENGAN INI */}
                   {devices.map((device, index) => (
                     <DeviceRow
                       key={device.id}
@@ -378,7 +380,6 @@ const Devices: React.FC = () => {
         </>
       )}
 
-      {/* Komponen Modal Tambah Perangkat */}
       {isAddModalOpen && (
         <AddDeviceModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} onSuccess={fetchDevices} />
       )}
