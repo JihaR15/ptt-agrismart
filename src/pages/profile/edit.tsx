@@ -93,6 +93,7 @@ const EditProfilePage: React.FC = () => {
               alt="Foto Profil"
               width={140}
               height={140}
+              unoptimized
               className="w-36 h-36 rounded-full object-cover border-4 border-white shadow-md"
               referrerPolicy="no-referrer"
             />

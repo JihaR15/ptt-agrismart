@@ -63,6 +63,7 @@ export const authOptions: NextAuthOptions = {
                 token.fullName = user.fullName;
                 token.role = user.role;
                 token.allowedDevices = user.allowedDevices || [];
+                token.image = user.image || token.image || null;
             }
             if (account?.provider === "google") {
                 const data = {
@@ -86,8 +87,24 @@ export const authOptions: NextAuthOptions = {
                 });
             }
 
-            if (trigger === "update" && session?.user?.allowedDevices) {
-                token.allowedDevices = session.user.allowedDevices;
+            if (trigger === "update" && session) {
+                const updatedUser = session.user || session;
+
+                if (typeof updatedUser.fullName === "string") {
+                    token.fullName = updatedUser.fullName;
+                }
+
+                if (typeof updatedUser.image === "string") {
+                    token.image = updatedUser.image;
+                }
+
+                if (typeof updatedUser.role === "string") {
+                    token.role = updatedUser.role;
+                }
+
+                if (Array.isArray(updatedUser.allowedDevices)) {
+                    token.allowedDevices = updatedUser.allowedDevices;
+                }
             }
 
             return token;
@@ -99,6 +116,7 @@ export const authOptions: NextAuthOptions = {
                 session.user.fullName = token.fullName;
                 session.user.role = token.role;
                 session.user.allowedDevices = token.allowedDevices || [];
+                session.user.image = token.image || session.user.image;
             }
             return session;
         },

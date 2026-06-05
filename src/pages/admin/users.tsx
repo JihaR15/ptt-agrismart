@@ -226,6 +226,7 @@ const UserManagement: React.FC = () => {
                               width={32}
                               height={32}
                               className="object-cover w-full h-full"
+                              unoptimized
                               referrerPolicy="no-referrer"
                             />
                           </div>

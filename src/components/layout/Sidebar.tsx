@@ -238,15 +238,13 @@ const Sidebar: React.FC<SidebarProps> = ({
             className="p-4 bg-surface-container-lowest rounded-2xl mb-4 flex items-center gap-3 border border-emerald-50 shadow-sm hover:bg-emerald-50/70 transition-colors"
             title="Profil Saya"
           >
-            <Image
+            <img
               className="w-10 h-10 rounded-full object-cover shrink-0"
               alt="Profile"
               src={
                 session?.user?.image ||
                 "https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png?utm_source=commons.wikimedia.org&utm_campaign=index&utm_content=original"
               }
-              width={40}
-              height={40}
               referrerPolicy="no-referrer"
             />
             <div className="overflow-hidden">
