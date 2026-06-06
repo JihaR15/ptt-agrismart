@@ -53,13 +53,34 @@ const LandingPage: React.FC<LandingPageProps> = ({ totalPengguna, totalTanaman }
               </a>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Link href="/auth/login" className="px-6 py-2.5 rounded-full font-bold text-sm md:text-base border-2 border-emerald-600 text-emerald-700 bg-transparent hover:bg-emerald-50 transition-colors">
-                Masuk
+            <div className="flex items-center gap-2 sm:gap-3">
+
+              <Link
+                href="/auth/login"
+                className="w-fit flex items-center justify-center gap-2 px-3 sm:px-6 py-2.5 rounded-full font-bold text-sm md:text-base border-2 border-emerald-600 text-emerald-700 hover:bg-emerald-50 transition-colors"
+              >
+                <span className="material-symbols-outlined text-lg">
+                  login
+                </span>
+
+                <span className="hidden sm:inline">
+                  Masuk
+                </span>
               </Link>
-              <Link href="/auth/register" className="bg-primary-container text-on-primary-container px-6 py-2.5 rounded-full font-bold active:scale-95 transform transition-transform duration-200 hover:shadow-lg text-sm md:text-base">
-                Mulai Sekarang
+
+              <Link
+                href="/auth/register"
+                className="w-fit flex items-center justify-center gap-2 bg-primary-container text-on-primary-container px-3 sm:px-6 py-2.5 rounded-full font-bold active:scale-95 transition-transform hover:shadow-lg text-sm md:text-base"
+              >
+                <span className="material-symbols-outlined text-lg">
+                  rocket_launch
+                </span>
+
+                <span className="hidden sm:inline">
+                  Mulai Sekarang
+                </span>
               </Link>
+
             </div>
           </div>
         </nav>

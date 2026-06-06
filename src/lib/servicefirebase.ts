@@ -76,37 +76,58 @@ export async function signIn(email: string) {
 export async function signInOAuth(userData: any, callback: Function) {
   try {
     const existingUser: any = await signIn(userData.email);
-
     if (existingUser) {
-      userData.role = existingUser.role;
-      userData.allowedDevices = existingUser.allowedDevices || []; 
-      
-      await updateDoc(doc(db, "users", existingUser.id), userData);
-      callback({
-        status: true,
-        message: "User successfully logged in",
-        data: userData,
-      });
 
       if (existingUser.isDeleted) {
         callback({
           status: false,
           message: "Akun Anda telah dinonaktifkan oleh Admin.",
         });
-        return; // Hentikan eksekusi kode di bawahnya
+        return;
       }
-    } else {
-      userData.role = existingUser.role;
-      userData.allowedDevices = existingUser.allowedDevices || []; 
-      
-      await updateDoc(doc(db, "users", existingUser.id), userData);
+
       callback({
         status: true,
-        message: "New user registered and logged in",
-        data: userData,
+        message: "User successfully logged in",
+        data: {
+          id: existingUser.id,
+          email: existingUser.email,
+          fullName: existingUser.fullName,
+          image: existingUser.image,
+          role: existingUser.role,
+          allowedDevices: existingUser.allowedDevices || [],
+        },
       });
+
+      return;
     }
+
+    const newUser = {
+      email: userData.email,
+      fullName: userData.fullName,
+      image: userData.image,
+      role: "user",
+      allowedDevices: [],
+      type: "google",
+    };
+
+    const docRef = await addDoc(
+      collection(db, "users"),
+      newUser
+    );
+
+    callback({
+      status: true,
+      message: "New user registered and logged in",
+      data: {
+        id: docRef.id,
+        ...newUser,
+      },
+    });
+
   } catch (error: any) {
+    console.error(error);
+
     callback({
       status: false,
       message: "Failed to authenticate user",
