@@ -20,8 +20,17 @@ jobs:
           port: ${{ secrets.EC2_PORT }}
 
           script: |
+            export NVM_DIR="$HOME/.nvm"
+            source "$NVM_DIR/nvm.sh"
+
+            nvm use 20
+
             set -e
-            
+
+            echo "NODE VERSION:"
+            node -v
+            which node
+
             echo "=== DEPLOY START ==="
 
             cd /var/www/agrismart
