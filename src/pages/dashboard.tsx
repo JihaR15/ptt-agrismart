@@ -546,6 +546,18 @@ const Dashboard: React.FC = () => {
                       dot={false}
                       activeDot={{ r: 6 }}
                     />
+                    <Area
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="moisture"
+                      name="Kelembapan Tanah (%)"
+                      stroke="#f59e0b" // Warna amber/coklat untuk tanah
+                      fill="#f59e0b"
+                      fillOpacity={0.3}
+                      strokeWidth={3}
+                      dot={false}
+                      activeDot={{ r: 6 }}
+                    />
                   </AreaChart>
                 </ResponsiveContainer>
               )}
