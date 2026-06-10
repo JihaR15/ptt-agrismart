@@ -231,7 +231,7 @@ const Devices: React.FC = () => {
     });
   }, []);
 
-  const totalOffline = Object.values(offlineStatus).filter(Boolean).length;
+  const totalOffline = devices.filter((device) => offlineStatus[device.id] === true).length;
 
   const totalMoisture = devices.reduce((sum, dev) => sum + (dev.targetMoisture || 0), 0);
   const avgMoisture = devices.length > 0 ? Math.round(totalMoisture / devices.length) : 0;
