@@ -55,14 +55,14 @@ const TopNavbar: React.FC<TopNavbarProps> = ({
       </div>
 
       <div className="flex items-center gap-2 md:gap-4">
-        <div className="flex items-center gap-1 md:gap-2">
+        {/* <div className="flex items-center gap-1 md:gap-2">
           <button className="w-10 h-10 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container transition-colors">
             <span className="material-symbols-outlined">notifications</span>
           </button>
           <button className="hidden md:flex w-10 h-10 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container transition-colors">
             <span className="material-symbols-outlined">settings</span>
           </button>
-        </div>
+        </div> */}
 
         {isSidebarCollapsed && (
           <div className="relative hidden lg:block ml-2 border-l border-outline-variant/30 pl-4">
@@ -79,6 +79,7 @@ const TopNavbar: React.FC<TopNavbarProps> = ({
                 }
                 width={32}
                 height={32}
+                unoptimized
                 referrerPolicy="no-referrer"
               />
               <div className="text-left">

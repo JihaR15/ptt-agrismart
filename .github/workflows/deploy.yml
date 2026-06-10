@@ -1,0 +1,48 @@
+name: Deploy Agrismart
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.EC2_PORT }}
+
+          script: |
+            export NVM_DIR="$HOME/.nvm"
+            source "$NVM_DIR/nvm.sh"
+
+            nvm use 20
+
+            set -e
+
+            echo "NODE VERSION:"
+            node -v
+            which node
+
+            echo "=== DEPLOY START ==="
+
+            cd /var/www/agrismart
+
+            git pull origin main
+
+            npm ci
+
+            npm run build
+
+            pm2 restart agrismart
+
+            pm2 save
+
+            echo "=== DEPLOY SUCCESS ==="
