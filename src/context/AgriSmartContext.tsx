@@ -12,6 +12,7 @@ interface ChartDataPoint {
   time: string;
   suhu: number;
   kelembapan: number;
+  moisture: number;
 }
 
 interface AgriSmartContextType {
@@ -118,6 +119,7 @@ export const AgriSmartProvider = ({ children }: { children: ReactNode }) => {
               time: timeString,
               suhu: payload.temperature || 0,
               kelembapan: payload.humidity || 0,
+              moisture: payload.moisture || 0,
             };
 
             const updatedChart = [...prev, newDataPoint];
